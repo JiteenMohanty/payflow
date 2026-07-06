@@ -7,6 +7,12 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+payflow:
+  security:
+    encryption-key: ${ENCRYPTION_KEY}
+    jwt:
+      secret: ${JWT_SECRET}
+
 management:
   endpoint:
     health:

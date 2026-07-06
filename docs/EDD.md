@@ -122,9 +122,9 @@ Module boundary rule: modules depend on each other **only through public interfa
 
 | Module | Owns | Public interface (consumed by others) | Depends on |
 |---|---|---|---|
-| `organization` | Organizations, dashboard users, org membership, API keys | `OrganizationLookupService`, `ApiKeyValidationService` | `common`, `security` |
+| `organization` | Organizations, dashboard users, org membership, API keys | `OrganizationLookupService`, `ApiKeyValidationService`, `UserAuthenticationService` | `common` (password hashing uses the `spring-security-crypto` library directly, not the `security` module) |
 | `merchant` | Merchants, provider account configs (credentials, defaults) | `MerchantLookupService`, `ProviderAccountResolver` | `organization`, `common` |
-| `security` | Authn (API key + JWT), RBAC, HMAC sign/verify, rate limiting | `TenantContext`, `HmacSigner` | `common` |
+| `security` | Authn (API key + JWT), RBAC, HMAC sign/verify, rate limiting | `TenantContextHolder` accessor (type lives in `common`) | `organization`, `common` |
 | `payment` | Payment aggregate + state machine + lifecycle use cases | `PaymentService`, `PaymentQueryService`, payment domain events | `provider`, `ledger`, `outbox`, `idempotency`, `merchant`, `common` |
 | `refund` | Refund aggregate + lifecycle | `RefundService`, refund domain events | `payment`, `provider`, `ledger`, `outbox`, `common` |
 | `ledger` | Ledger accounts, transactions, immutable entries | `LedgerService`, `LedgerQueryService` | `common` |
@@ -132,7 +132,7 @@ Module boundary rule: modules depend on each other **only through public interfa
 | `webhook` | Inbound provider receipt, outbound merchant delivery, DLQ | `InboundWebhookProcessor`, `WebhookEndpointService`, `WebhookDeliveryQueryService` | `security`, `outbox`, `common` |
 | `outbox` | Outbox table, relay to Kafka, retry/poison handling | `OutboxWriter` (used inside the same DB transaction) | `common`, `infrastructure` |
 | `idempotency` | Idempotency key cache + persistence | `IdempotencyGuard` | `common`, `infrastructure` |
-| `common` | Money, domain exceptions, event contracts, correlation ID, pagination types | — (leaf module, zero inbound dependency on others) | none |
+| `common` | Money, domain exceptions, event contracts, correlation ID, pagination types, `TenantContext`/`TenantContextHolder` | — (leaf module, zero inbound dependency on others) | none |
 | `infrastructure` | Cross-cutting config: DataSource, Flyway, Kafka, Redis, Bucket4j, OTel, Micrometer, scheduling | — | `common` |
 
 Package-by-feature: every module is `com.payflow.core.<module>` with internal sub-packages `domain`, `application`, `api` (controllers/DTOs), `persistence` (JPA entities/repositories), and `internal` for anything not meant to leak out.

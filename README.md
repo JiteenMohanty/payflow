@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: M0 — Bootstrap & Tooling complete.** The Maven reactor, Docker Compose skeleton, Flyway baseline, and CI pipeline are in place. No business logic exists yet — see [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
+> **Status: M1 — Tenancy & Security Core complete.** Organizations, dashboard users, API keys, merchants, and provider accounts exist, with JWT + API-key authentication and RBAC enforced. Payment processing itself starts at M2. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
 
 ## Why a platform, not a gateway
 
@@ -34,8 +34,6 @@ payflow/
 
 ## Quick Start
 
-The backend skeleton runs end-to-end today; there's no business functionality yet (that starts at M1), but the two Spring Boot applications boot, connect to real infrastructure, and report healthy.
-
 ```bash
 # 1. Start local infra: Postgres, Redis, Kafka
 docker compose -f infra/docker-compose.yml up -d
@@ -50,6 +48,25 @@ curl http://localhost:8080/actuator/health   # {"status":"UP"}
 # 4. In another terminal, run the Mock Provider service
 java -jar mock-provider-service/target/mock-provider-service.jar
 curl http://localhost:8081/actuator/health   # {"status":"UP"}
+```
+
+Try the tenancy flow end-to-end:
+
+```bash
+# Sign up an organization + owner
+curl -X POST http://localhost:8080/v1/organizations \
+  -H "Content-Type: application/json" \
+  -d '{"organizationName":"Acme Corp","ownerEmail":"owner@acme.test","ownerFullName":"Ada Owner","password":"correct-horse-battery-staple"}'
+
+# Log in to get a dashboard JWT
+curl -X POST http://localhost:8080/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"owner@acme.test","password":"correct-horse-battery-staple"}'
+
+# Use the accessToken from the response to create an API key, a merchant, etc.
+curl -X POST http://localhost:8080/v1/organizations/<organizationId>/api-keys \
+  -H "Authorization: Bearer <accessToken>" -H "Content-Type: application/json" \
+  -d '{"environment":"TEST"}'
 ```
 
 Running the full test suite (`mvn verify`) requires a working Docker environment reachable by Testcontainers. On Windows with Docker Desktop, `docker compose` and plain `docker` commands work fine, but some Docker Desktop builds have a known Testcontainers/docker-java incompatibility over the Windows named pipe API — if `mvn verify` fails with `Could not find a valid Docker environment` while `docker ps` works, this is a local environment issue, not a code issue (GitHub Actions CI runs native Linux Docker, unaffected).

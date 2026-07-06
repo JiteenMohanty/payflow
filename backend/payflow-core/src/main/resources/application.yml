@@ -19,3 +19,9 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+
+payflow:
+  security:
+    jwt:
+      access-token-ttl-minutes: 15
+      refresh-token-ttl-days: 7
