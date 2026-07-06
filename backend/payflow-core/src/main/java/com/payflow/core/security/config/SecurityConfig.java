@@ -2,6 +2,7 @@ package com.payflow.core.security.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.payflow.core.common.exception.ErrorResponse;
+import com.payflow.core.idempotency.filter.IdempotencyFilter;
 import com.payflow.core.infrastructure.web.CorrelationIdFilter;
 import com.payflow.core.security.filter.ApiKeyAuthenticationFilter;
 import com.payflow.core.security.filter.JwtAuthenticationFilter;
@@ -27,6 +28,7 @@ public class SecurityConfig {
 
     private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final IdempotencyFilter idempotencyFilter;
     private final ObjectMapper objectMapper;
 
     @Bean
@@ -47,7 +49,9 @@ public class SecurityConfig {
                                 response, HttpServletResponse.SC_FORBIDDEN,
                                 "authorization_error", "forbidden", accessDeniedException.getMessage())))
                 .addFilterBefore(apiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // After both auth filters, so TenantContext is already populated.
+                .addFilterAfter(idempotencyFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

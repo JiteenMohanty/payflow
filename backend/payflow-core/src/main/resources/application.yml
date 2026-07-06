@@ -25,3 +25,6 @@ payflow:
     jwt:
       access-token-ttl-minutes: 15
       refresh-token-ttl-days: 7
+  idempotency:
+    key-ttl-hours: 24
+    redis-cache-ttl-minutes: 60
