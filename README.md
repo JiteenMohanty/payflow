@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: Phase 0 — Design.** The engineering design has been completed and is pending sign-off. No application code exists yet; see [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when. This README will grow screenshots, a quick start, and deployment instructions as milestones land.
+> **Status: M0 — Bootstrap & Tooling complete.** The Maven reactor, Docker Compose skeleton, Flyway baseline, and CI pipeline are in place. No business logic exists yet — see [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
 
 ## Why a platform, not a gateway
 
@@ -34,7 +34,27 @@ payflow/
 
 ## Quick Start
 
-Not yet available — the backend and frontend are unimplemented (Phase 0). Once M0 (bootstrap & tooling) lands, this section will cover `docker compose up` for local development.
+The backend skeleton runs end-to-end today; there's no business functionality yet (that starts at M1), but the two Spring Boot applications boot, connect to real infrastructure, and report healthy.
+
+```bash
+# 1. Start local infra: Postgres, Redis, Kafka
+docker compose -f infra/docker-compose.yml up -d
+
+# 2. Build both backend services
+cd backend && mvn -DskipTests package
+
+# 3. Run PayFlow Core (applies Flyway migrations against Postgres on startup)
+java -jar payflow-core/target/payflow-core.jar
+curl http://localhost:8080/actuator/health   # {"status":"UP"}
+
+# 4. In another terminal, run the Mock Provider service
+java -jar mock-provider-service/target/mock-provider-service.jar
+curl http://localhost:8081/actuator/health   # {"status":"UP"}
+```
+
+Running the full test suite (`mvn verify`) requires a working Docker environment reachable by Testcontainers. On Windows with Docker Desktop, `docker compose` and plain `docker` commands work fine, but some Docker Desktop builds have a known Testcontainers/docker-java incompatibility over the Windows named pipe API — if `mvn verify` fails with `Could not find a valid Docker environment` while `docker ps` works, this is a local environment issue, not a code issue (GitHub Actions CI runs native Linux Docker, unaffected).
+
+Frontend quick start will be added at M12.
 
 ## Roadmap
 

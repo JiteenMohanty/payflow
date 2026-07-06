@@ -1,0 +1,23 @@
+# Maven
+backend/**/target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend (future milestones)
+frontend/**/node_modules/
+frontend/**/dist/
+
+# Environment
+.env
+.env.*.local
+
+# Logs
+*.log
