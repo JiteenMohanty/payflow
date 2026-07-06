@@ -3,10 +3,13 @@ package com.payflow.core.infrastructure.web;
 import com.payflow.core.common.exception.ConflictException;
 import com.payflow.core.common.exception.ErrorResponse;
 import com.payflow.core.common.exception.PayFlowException;
+import com.payflow.core.common.exception.ProviderCommunicationException;
 import com.payflow.core.common.exception.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -18,7 +21,15 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.stream.Collectors;
 
+/**
+ * Lowest precedence so module-specific advices (e.g. PaymentExceptionHandler)
+ * always get first refusal on their own exception types - Spring picks the
+ * first advice bean with any applicable handler, not the most specific
+ * handler across all beans, so the generic PayFlowException catch-all here
+ * must never outrank a more specific one declared elsewhere.
+ */
 @RestControllerAdvice
+@Order(Ordered.LOWEST_PRECEDENCE)
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
@@ -31,6 +42,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<ErrorResponse> handleConflict(ConflictException ex) {
         return respond(HttpStatus.CONFLICT, "invalid_request_error", ex.getCode(), ex.getMessage());
+    }
+
+    @ExceptionHandler(ProviderCommunicationException.class)
+    public ResponseEntity<ErrorResponse> handleProviderCommunication(ProviderCommunicationException ex) {
+        log.error("Provider communication failure", ex);
+        return respond(HttpStatus.BAD_GATEWAY, "provider_error", ex.getCode(), ex.getMessage());
     }
 
     @ExceptionHandler(PayFlowException.class)

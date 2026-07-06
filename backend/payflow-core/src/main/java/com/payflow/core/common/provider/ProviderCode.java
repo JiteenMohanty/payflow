@@ -1,4 +1,4 @@
-package com.payflow.core.merchant.domain;
+package com.payflow.core.common.provider;
 
 public enum ProviderCode {
     MOCK,

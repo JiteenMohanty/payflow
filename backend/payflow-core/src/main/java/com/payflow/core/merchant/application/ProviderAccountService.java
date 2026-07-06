@@ -2,9 +2,10 @@ package com.payflow.core.merchant.application;
 
 import com.payflow.core.common.crypto.SymmetricEncryptor;
 import com.payflow.core.common.exception.ResourceNotFoundException;
+import com.payflow.core.common.provider.ProviderCode;
 import com.payflow.core.merchant.domain.Merchant;
 import com.payflow.core.merchant.domain.ProviderAccount;
-import com.payflow.core.merchant.domain.ProviderCode;
+import com.payflow.core.merchant.domain.ProviderAccountStatus;
 import com.payflow.core.merchant.persistence.ProviderAccountRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -58,10 +59,25 @@ public class ProviderAccountService implements ProviderAccountResolver {
     @Override
     @Transactional(readOnly = true)
     public ProviderAccountSummary resolveDefault(UUID merchantId) {
-        Optional<ProviderAccount> defaultAccount = providerAccountRepository.findByMerchantIdAndIsDefaultTrue(merchantId);
-        return defaultAccount.map(this::toSummary)
+        ProviderAccount account = providerAccountRepository.findByMerchantIdAndIsDefaultTrue(merchantId)
+                .filter(this::isActive)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "No default provider account configured for merchant: " + merchantId));
+                        "No active default provider account configured for merchant: " + merchantId));
+        return toSummary(account);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ProviderAccountSummary resolveById(UUID merchantId, UUID providerAccountId) {
+        ProviderAccount account = providerAccountRepository.findByIdAndMerchantId(providerAccountId, merchantId)
+                .filter(this::isActive)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Active provider account not found: " + providerAccountId));
+        return toSummary(account);
+    }
+
+    private boolean isActive(ProviderAccount account) {
+        return account.getStatus() == ProviderAccountStatus.ACTIVE;
     }
 
     private ProviderAccountSummary toSummary(ProviderAccount providerAccount) {

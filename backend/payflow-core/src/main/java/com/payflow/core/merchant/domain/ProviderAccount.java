@@ -1,5 +1,6 @@
 package com.payflow.core.merchant.domain;
 
+import com.payflow.core.common.provider.ProviderCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

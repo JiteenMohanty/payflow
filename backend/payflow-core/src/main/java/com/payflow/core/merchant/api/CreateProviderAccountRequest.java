@@ -1,6 +1,6 @@
 package com.payflow.core.merchant.api;
 
-import com.payflow.core.merchant.domain.ProviderCode;
+import com.payflow.core.common.provider.ProviderCode;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 

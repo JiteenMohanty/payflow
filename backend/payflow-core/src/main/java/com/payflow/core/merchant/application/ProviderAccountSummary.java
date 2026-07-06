@@ -1,7 +1,7 @@
 package com.payflow.core.merchant.application;
 
+import com.payflow.core.common.provider.ProviderCode;
 import com.payflow.core.merchant.domain.ProviderAccountStatus;
-import com.payflow.core.merchant.domain.ProviderCode;
 
 import java.time.Instant;
 import java.util.UUID;

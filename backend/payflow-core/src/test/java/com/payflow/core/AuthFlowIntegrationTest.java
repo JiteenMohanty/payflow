@@ -4,7 +4,7 @@ import com.payflow.core.merchant.api.CreateMerchantRequest;
 import com.payflow.core.merchant.api.CreateProviderAccountRequest;
 import com.payflow.core.merchant.api.MerchantResponse;
 import com.payflow.core.merchant.api.ProviderAccountResponse;
-import com.payflow.core.merchant.domain.ProviderCode;
+import com.payflow.core.common.provider.ProviderCode;
 import com.payflow.core.organization.api.CreateApiKeyRequest;
 import com.payflow.core.organization.api.CreateApiKeyResponse;
 import com.payflow.core.organization.api.CreateOrganizationRequest;

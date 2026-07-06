@@ -223,6 +223,7 @@ erDiagram
         numeric captured_amount
         numeric refunded_amount
         uuid idempotency_key_id FK
+        string description
         jsonb metadata
         timestamp created_at
         timestamp authorized_at

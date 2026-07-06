@@ -12,4 +12,6 @@ public interface ProviderAccountRepository extends JpaRepository<ProviderAccount
     List<ProviderAccount> findByMerchantId(UUID merchantId);
 
     Optional<ProviderAccount> findByMerchantIdAndIsDefaultTrue(UUID merchantId);
+
+    Optional<ProviderAccount> findByIdAndMerchantId(UUID id, UUID merchantId);
 }

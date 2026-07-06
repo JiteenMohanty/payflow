@@ -12,6 +12,9 @@ payflow:
     encryption-key: ${ENCRYPTION_KEY:M+Gn9EGNdnD8i/r1+Pu9ipAZfBjsfahlPsyVvgbqT80=}
     jwt:
       secret: ${JWT_SECRET:DwYOwf5/PG/Mpk6zODEfFznfCeCjKLbCmVGBZG0n3FrE0YGvFrUVd7Pb2A0ZGBrP}
+  provider:
+    mock:
+      base-url: ${MOCK_PROVIDER_BASE_URL:http://localhost:8081}
 
 logging:
   level:

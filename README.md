@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: M1 — Tenancy & Security Core complete.** Organizations, dashboard users, API keys, merchants, and provider accounts exist, with JWT + API-key authentication and RBAC enforced. Payment processing itself starts at M2. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
+> **Status: M2 — Payment Lifecycle complete.** Payments can be created, authorized, and captured against the Mock Provider, with a full audit trail of state transitions. No ledger postings, idempotency, or webhooks yet — those are M3/M4/M6-M8. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
 
 ## Why a platform, not a gateway
 
@@ -63,10 +63,32 @@ curl -X POST http://localhost:8080/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"owner@acme.test","password":"correct-horse-battery-staple"}'
 
-# Use the accessToken from the response to create an API key, a merchant, etc.
+# Use the accessToken from the response to create an API key, a merchant, and a
+# default (MOCK) provider account for it - see docs/EDD.md section 5.1 for the
+# full request shapes.
 curl -X POST http://localhost:8080/v1/organizations/<organizationId>/api-keys \
   -H "Authorization: Bearer <accessToken>" -H "Content-Type: application/json" \
   -d '{"environment":"TEST"}'
+```
+
+Then run a payment through its lifecycle with the resulting API key:
+
+```bash
+# Create a payment intent (no provider call yet)
+curl -X POST http://localhost:8080/v1/payments \
+  -H "Authorization: Bearer <apiKey>" -H "Content-Type: application/json" \
+  -d '{"merchantId":"<merchantId>","amount":"149.00","currency":"USD","description":"Order #10432"}'
+
+# Authorize against the Mock Provider
+curl -X POST http://localhost:8080/v1/payments/<paymentId>/authorize \
+  -H "Authorization: Bearer <apiKey>" -H "Content-Type: application/json" -d '{}'
+
+# Capture (full or partial)
+curl -X POST http://localhost:8080/v1/payments/<paymentId>/capture \
+  -H "Authorization: Bearer <apiKey>" -H "Content-Type: application/json" -d '{}'
+
+# See the full state timeline
+curl http://localhost:8080/v1/payments/<paymentId> -H "Authorization: Bearer <apiKey>"
 ```
 
 Running the full test suite (`mvn verify`) requires a working Docker environment reachable by Testcontainers. On Windows with Docker Desktop, `docker compose` and plain `docker` commands work fine, but some Docker Desktop builds have a known Testcontainers/docker-java incompatibility over the Windows named pipe API — if `mvn verify` fails with `Could not find a valid Docker environment` while `docker ps` works, this is a local environment issue, not a code issue (GitHub Actions CI runs native Linux Docker, unaffected).
