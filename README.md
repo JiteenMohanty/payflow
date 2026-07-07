@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: M3 — Idempotency complete.** Mutating merchant-facing requests carrying an `Idempotency-Key` header are safely retryable — Postgres-backed, Redis fast path, degrades gracefully if Redis is unavailable. No ledger postings or webhooks yet — those are M4/M6-M8. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
+> **Status: M4 — Ledger complete.** Every capture posts an immutable, balanced double-entry ledger transaction — enforced by real database triggers, not just application code. No webhooks or outbox yet — those are M6-M8. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
 
 ## Why a platform, not a gateway
 
@@ -98,6 +98,12 @@ curl -X POST http://localhost:8080/v1/payments \
   -H "Authorization: Bearer <apiKey>" -H "Content-Type: application/json" -H "Idempotency-Key: order-10432-attempt-1" \
   -d '{"merchantId":"<merchantId>","amount":"149.00","currency":"USD","description":"Order #10432"}'
 # Run the exact same curl command again - identical response, no second payment created.
+```
+
+See the double-entry ledger a capture posted (immutable — `UPDATE`/`DELETE` on these rows is rejected by the database itself, not just the application):
+
+```bash
+curl http://localhost:8080/v1/ledger/entries?paymentId=<paymentId> -H "Authorization: Bearer <apiKey>"
 ```
 
 Running the full test suite (`mvn verify`) requires a working Docker environment reachable by Testcontainers. On Windows with Docker Desktop, `docker compose` and plain `docker` commands work fine, but some Docker Desktop builds have a known Testcontainers/docker-java incompatibility over the Windows named pipe API — if `mvn verify` fails with `Could not find a valid Docker environment` while `docker ps` works, this is a local environment issue, not a code issue (GitHub Actions CI runs native Linux Docker, unaffected).

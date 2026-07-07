@@ -2,6 +2,7 @@ package com.payflow.core.payment.application;
 
 import com.payflow.core.common.exception.DomainValidationException;
 import com.payflow.core.common.exception.ResourceNotFoundException;
+import com.payflow.core.ledger.application.LedgerService;
 import com.payflow.core.merchant.application.MerchantLookupService;
 import com.payflow.core.merchant.application.MerchantSummary;
 import com.payflow.core.merchant.application.ProviderAccountResolver;
@@ -42,6 +43,7 @@ public class PaymentService {
     private final MerchantLookupService merchantLookupService;
     private final ProviderAccountResolver providerAccountResolver;
     private final ProviderRegistry providerRegistry;
+    private final LedgerService ledgerService;
 
     @Transactional
     public PaymentSummary createPayment(
@@ -112,6 +114,10 @@ public class PaymentService {
         PaymentStatus from = payment.getStatus();
         payment.markCaptured(captureAmount);
         recordTransition(payment, from, PaymentStatus.CAPTURED, PaymentActor.API, null);
+        // Same transaction as the state change above - see ADR-0008. A
+        // captured payment with no ledger posting must never be a reachable
+        // state, not just an unlikely one.
+        ledgerService.postCapture(organizationId, payment.getId(), captureAmount, payment.getCurrency());
 
         return toSummary(payment);
     }

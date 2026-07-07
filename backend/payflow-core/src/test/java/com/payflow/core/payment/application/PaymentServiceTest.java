@@ -3,6 +3,7 @@ package com.payflow.core.payment.application;
 import com.payflow.core.common.exception.DomainValidationException;
 import com.payflow.core.common.exception.ResourceNotFoundException;
 import com.payflow.core.common.provider.ProviderCode;
+import com.payflow.core.ledger.application.LedgerService;
 import com.payflow.core.merchant.application.MerchantLookupService;
 import com.payflow.core.merchant.application.MerchantSummary;
 import com.payflow.core.merchant.application.ProviderAccountResolver;
@@ -53,6 +54,8 @@ class PaymentServiceTest {
     private ProviderRegistry providerRegistry;
     @Mock
     private ProviderClient providerClient;
+    @Mock
+    private LedgerService ledgerService;
 
     private PaymentService paymentService;
 
@@ -61,8 +64,8 @@ class PaymentServiceTest {
 
     @BeforeEach
     void setUp() {
-        paymentService = new PaymentService(
-                paymentRepository, transitionRepository, merchantLookupService, providerAccountResolver, providerRegistry);
+        paymentService = new PaymentService(paymentRepository, transitionRepository, merchantLookupService,
+                providerAccountResolver, providerRegistry, ledgerService);
     }
 
     @Test
@@ -130,7 +133,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void captureTransitionsToCapturedWhenProviderCaptures() {
+    void captureTransitionsToCapturedAndPostsTheLedgerEntryInTheSameCall() {
         Payment payment = authorizedPayment(new BigDecimal("100.00"));
         when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
         when(providerRegistry.resolve(ProviderCode.MOCK)).thenReturn(providerClient);
@@ -140,6 +143,7 @@ class PaymentServiceTest {
 
         assertThat(summary.status()).isEqualTo(PaymentStatus.CAPTURED);
         assertThat(summary.capturedAmount()).isEqualByComparingTo("100.00");
+        verify(ledgerService).postCapture(organizationId, payment.getId(), new BigDecimal("100.00"), "USD");
     }
 
     @Test
@@ -160,6 +164,8 @@ class PaymentServiceTest {
 
         assertThatThrownBy(() -> paymentService.capture(organizationId, payment.getId(), null))
                 .isInstanceOf(DomainValidationException.class);
+
+        verify(ledgerService, never()).postCapture(any(), any(), any(), any());
     }
 
     @Test
