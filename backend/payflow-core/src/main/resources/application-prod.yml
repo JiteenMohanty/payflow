@@ -21,6 +21,7 @@ payflow:
   provider:
     mock:
       base-url: ${MOCK_PROVIDER_BASE_URL}
+      webhook-secret: ${MOCK_PROVIDER_WEBHOOK_SECRET}
 
 management:
   endpoint:

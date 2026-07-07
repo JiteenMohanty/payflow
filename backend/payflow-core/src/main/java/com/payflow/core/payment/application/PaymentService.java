@@ -5,6 +5,7 @@ import com.payflow.core.common.event.OutboxTopics;
 import com.payflow.core.common.event.PaymentEventPayload;
 import com.payflow.core.common.exception.DomainValidationException;
 import com.payflow.core.common.exception.ResourceNotFoundException;
+import com.payflow.core.common.provider.ProviderCode;
 import com.payflow.core.ledger.application.LedgerService;
 import com.payflow.core.merchant.application.MerchantLookupService;
 import com.payflow.core.merchant.application.MerchantSummary;
@@ -36,9 +37,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Only capture confirmation is reconciled from an inbound provider webhook
+ * (see reconcileCaptureConfirmation) - authorize and refund reconciliation
+ * are deliberately out of scope for M7. Both share a gap capture doesn't
+ * have: authorize() and RefundService.createRefund() roll back their entire
+ * transaction on a provider communication failure (see both methods),
+ * persisting nothing - so a lost sync response for either leaves no
+ * committed row for a webhook to "confirm." Reconciling them would mean
+ * creating state from the webhook alone, a materially different operation
+ * this milestone's worked example (EDD section 7.2) doesn't cover.
+ */
 @Service
 @RequiredArgsConstructor
-public class PaymentService implements PaymentRefundSupport {
+public class PaymentService implements PaymentRefundSupport, PaymentReconciliationSupport {
 
     private static final int DEFAULT_LIST_LIMIT = 20;
     private static final int MAX_LIST_LIMIT = 100;
@@ -67,7 +79,7 @@ public class PaymentService implements PaymentRefundSupport {
 
     @Transactional
     public PaymentSummary authorize(UUID organizationId, UUID paymentId, UUID providerAccountIdOverride) {
-        Payment payment = loadOwnedPayment(organizationId, paymentId);
+        Payment payment = loadOwnedPaymentForUpdate(organizationId, paymentId);
         // Validate before calling the provider - not after - so a payment that
         // isn't CREATED can never trigger a second provider-side authorization.
         PaymentStateMachine.validateTransition(payment.getStatus(), PaymentStatus.AUTHORIZED);
@@ -99,7 +111,7 @@ public class PaymentService implements PaymentRefundSupport {
 
     @Transactional
     public PaymentSummary capture(UUID organizationId, UUID paymentId, BigDecimal requestedAmount) {
-        Payment payment = loadOwnedPayment(organizationId, paymentId);
+        Payment payment = loadOwnedPaymentForUpdate(organizationId, paymentId);
         // Same reasoning as authorize(): validate before calling the provider,
         // not after, so an illegal capture attempt never reaches it at all.
         PaymentStateMachine.validateTransition(payment.getStatus(), PaymentStatus.CAPTURED);
@@ -120,23 +132,64 @@ public class PaymentService implements PaymentRefundSupport {
             throw new DomainValidationException("Capture failed: " + result.failureReason());
         }
 
-        PaymentStatus from = payment.getStatus();
-        payment.markCaptured(captureAmount);
-        recordTransition(payment, from, PaymentStatus.CAPTURED, PaymentActor.API, null);
-        // Same transaction as the state change above - see ADR-0008. A
-        // captured payment with no ledger posting must never be a reachable
-        // state, not just an unlikely one.
-        ledgerService.postCapture(organizationId, payment.getId(), captureAmount, payment.getCurrency());
-        emitPaymentEvent(payment, "payment.captured");
-        emitLedgerEvent(organizationId, payment.getId(), "CAPTURE", captureAmount, payment.getCurrency());
+        applyCapture(payment, captureAmount, PaymentActor.API, null);
 
         return toSummary(payment);
     }
 
+    /**
+     * Reconciliation path for a lost/timed-out synchronous capture response
+     * (ADR-0011, EDD section 7.2) - the provider has already confirmed the
+     * capture via webhook, so unlike capture() above, this never calls the
+     * provider again. Idempotent: a webhook retried after the payment is
+     * already CAPTURED (or beyond) is a safe no-op, matching "confirm, don't
+     * blindly overwrite" from ADR-0011. amount is trusted from the webhook
+     * payload (the reconciliation source of truth) but still bounded by
+     * remainingCapturableAmount as a defensive check against a stale or
+     * malformed event - a real signature only proves the event's origin,
+     * not that its content still makes sense against current state.
+     */
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
+    public void reconcileCaptureConfirmation(ProviderCode providerCode, String providerReference, BigDecimal amount, String currency) {
+        paymentRepository.lockByProviderCodeAndProviderReference(providerCode, providerReference)
+                .ifPresent(payment -> {
+                    if (payment.getStatus() != PaymentStatus.AUTHORIZED) {
+                        // Already CAPTURED (or beyond): idempotent no-op.
+                        // Any other state is unexpected for a capture
+                        // confirmation - ignored rather than blindly applied.
+                        return;
+                    }
+                    if (amount.signum() <= 0 || amount.compareTo(payment.remainingCapturableAmount()) > 0) {
+                        return;
+                    }
+                    applyCapture(payment, amount, PaymentActor.PROVIDER_WEBHOOK, "reconciled from provider webhook");
+                });
+    }
+
+    private void applyCapture(Payment payment, BigDecimal captureAmount, PaymentActor actor, String reason) {
+        PaymentStatus from = payment.getStatus();
+        payment.markCaptured(captureAmount);
+        recordTransition(payment, from, PaymentStatus.CAPTURED, actor, reason);
+        // Same transaction as the state change above - see ADR-0008. A
+        // captured payment with no ledger posting must never be a reachable
+        // state, not just an unlikely one.
+        ledgerService.postCapture(payment.getOrganizationId(), payment.getId(), captureAmount, payment.getCurrency());
+        emitPaymentEvent(payment, "payment.captured");
+        emitLedgerEvent(payment.getOrganizationId(), payment.getId(), "CAPTURE", captureAmount, payment.getCurrency());
+    }
+
+    /**
+     * Not readOnly, despite never mutating anything itself: it locks the row
+     * (see loadOwnedPaymentForUpdate) so that lock is still held when
+     * RefundService.createRefund() later calls applyRefund() within the
+     * same transaction - Postgres rejects SELECT ... FOR UPDATE inside a
+     * connection actually marked read-only.
+     */
+    @Override
+    @Transactional
     public PaymentRefundContext loadForRefund(UUID organizationId, UUID paymentId) {
-        Payment payment = loadOwnedPayment(organizationId, paymentId);
+        Payment payment = loadOwnedPaymentForUpdate(organizationId, paymentId);
         if (payment.getStatus() != PaymentStatus.CAPTURED && payment.getStatus() != PaymentStatus.PARTIALLY_REFUNDED) {
             throw new DomainValidationException("Payment is not in a refundable state: " + payment.getStatus());
         }
@@ -148,7 +201,7 @@ public class PaymentService implements PaymentRefundSupport {
     @Override
     @Transactional
     public void applyRefund(UUID organizationId, UUID paymentId, BigDecimal refundAmount) {
-        Payment payment = loadOwnedPayment(organizationId, paymentId);
+        Payment payment = loadOwnedPaymentForUpdate(organizationId, paymentId);
         BigDecimal newRefundedAmount = payment.getRefundedAmount().add(refundAmount);
         PaymentStatus targetStatus = newRefundedAmount.compareTo(payment.getCapturedAmount()) >= 0
                 ? PaymentStatus.REFUNDED
@@ -186,6 +239,16 @@ public class PaymentService implements PaymentRefundSupport {
 
     private Payment loadOwnedPayment(UUID organizationId, UUID paymentId) {
         return paymentRepository.findByIdAndOrganizationId(paymentId, organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
+    }
+
+    /**
+     * For any caller that loads a payment in order to mutate it - see
+     * PaymentRepository.lockByIdAndOrganizationId for why this is load-
+     * bearing, not defensive.
+     */
+    private Payment loadOwnedPaymentForUpdate(UUID organizationId, UUID paymentId) {
+        return paymentRepository.lockByIdAndOrganizationId(paymentId, organizationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
     }
 

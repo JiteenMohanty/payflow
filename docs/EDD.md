@@ -129,7 +129,7 @@ Module boundary rule: modules depend on each other **only through public interfa
 | `refund` | Refund aggregate + lifecycle | `RefundService`, refund domain events | `payment`, `provider`, `ledger`, `outbox`, `common` |
 | `ledger` | Ledger accounts, transactions, immutable entries | `LedgerService`, `LedgerQueryService` | `common` |
 | `provider` | `ProviderClient` abstraction + adapters | `ProviderClient`, `ProviderRegistry` | `common` |
-| `webhook` | Inbound provider receipt, outbound merchant delivery, DLQ | `InboundWebhookProcessor`, `WebhookEndpointService`, `WebhookDeliveryQueryService` | `security`, `outbox`, `common` |
+| `webhook` | Inbound provider receipt, outbound merchant delivery, DLQ | `InboundWebhookProcessor`, `WebhookEndpointService`, `WebhookDeliveryQueryService` | `payment`, `security`, `outbox`, `common` |
 | `outbox` | Outbox table, relay to Kafka, retry/poison handling | `OutboxWriter` (used inside the same DB transaction) | `common`, `infrastructure` |
 | `idempotency` | Idempotency key cache + persistence | `IdempotencyGuard` | `common`, `infrastructure` |
 | `common` | Money, domain exceptions, event contracts, correlation ID, pagination types, `TenantContext`/`TenantContextHolder` | — (leaf module, zero inbound dependency on others) | none |
@@ -308,6 +308,7 @@ erDiagram
         jsonb payload
         boolean signature_valid
         string processing_status
+        timestamp created_at
     }
     OUTBOX_EVENTS {
         uuid id PK

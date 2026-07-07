@@ -40,6 +40,10 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/organizations").permitAll()
                         .requestMatchers("/v1/auth/**").permitAll()
+                        // Providers have neither an API key nor a JWT -
+                        // authenticated instead by HMAC signature inside
+                        // InboundWebhookProcessor (EDD section 5.4).
+                        .requestMatchers(HttpMethod.POST, "/v1/webhooks/providers/*").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, authException) -> writeError(

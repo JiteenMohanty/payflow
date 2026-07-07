@@ -101,7 +101,7 @@ class PaymentServiceTest {
     @Test
     void authorizeTransitionsToAuthorizedWhenProviderAuthorizes() {
         Payment payment = newPayment(new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
         when(providerAccountResolver.resolveDefault(merchantId)).thenReturn(providerAccount());
         when(providerRegistry.resolve(ProviderCode.MOCK)).thenReturn(providerClient);
         when(providerClient.authorize(any())).thenReturn(
@@ -116,7 +116,7 @@ class PaymentServiceTest {
     @Test
     void authorizeTransitionsToFailedWhenProviderDeclines() {
         Payment payment = newPayment(new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
         when(providerAccountResolver.resolveDefault(merchantId)).thenReturn(providerAccount());
         when(providerRegistry.resolve(ProviderCode.MOCK)).thenReturn(providerClient);
         when(providerClient.authorize(any())).thenReturn(
@@ -130,7 +130,7 @@ class PaymentServiceTest {
     @Test
     void authorizeRejectsAnAlreadyAuthorizedPaymentWithoutCallingTheProviderAgain() {
         Payment payment = authorizedPayment(new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
 
         assertThatThrownBy(() -> paymentService.authorize(organizationId, payment.getId(), null))
                 .isInstanceOf(IllegalPaymentTransitionException.class);
@@ -141,7 +141,7 @@ class PaymentServiceTest {
     @Test
     void captureTransitionsToCapturedAndPostsTheLedgerEntryInTheSameCall() {
         Payment payment = authorizedPayment(new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
         when(providerRegistry.resolve(ProviderCode.MOCK)).thenReturn(providerClient);
         when(providerClient.capture(any())).thenReturn(new ProviderCaptureResult(ProviderCaptureStatus.CAPTURED, null));
 
@@ -157,7 +157,7 @@ class PaymentServiceTest {
     @Test
     void captureRejectsAmountExceedingRemaining() {
         Payment payment = authorizedPayment(new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
 
         assertThatThrownBy(() -> paymentService.capture(organizationId, payment.getId(), new BigDecimal("150.00")))
                 .isInstanceOf(DomainValidationException.class);
@@ -166,7 +166,7 @@ class PaymentServiceTest {
     @Test
     void captureRejectsWhenProviderReportsFailure() {
         Payment payment = authorizedPayment(new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
         when(providerRegistry.resolve(ProviderCode.MOCK)).thenReturn(providerClient);
         when(providerClient.capture(any())).thenReturn(new ProviderCaptureResult(ProviderCaptureStatus.FAILED, "network_error"));
 
@@ -180,7 +180,7 @@ class PaymentServiceTest {
     @Test
     void captureRejectsPaymentThatWasNeverAuthorizedWithoutCallingTheProvider() {
         Payment payment = newPayment(new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
 
         assertThatThrownBy(() -> paymentService.capture(organizationId, payment.getId(), null))
                 .isInstanceOf(IllegalPaymentTransitionException.class);
@@ -191,7 +191,7 @@ class PaymentServiceTest {
     @Test
     void loadForRefundReturnsContextWhenPaymentIsCaptured() {
         Payment payment = capturedPayment(new BigDecimal("100.00"), new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
 
         PaymentRefundContext context = paymentService.loadForRefund(organizationId, payment.getId());
 
@@ -204,7 +204,7 @@ class PaymentServiceTest {
     @Test
     void loadForRefundRejectsPaymentThatWasNeverCaptured() {
         Payment payment = authorizedPayment(new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
 
         assertThatThrownBy(() -> paymentService.loadForRefund(organizationId, payment.getId()))
                 .isInstanceOf(DomainValidationException.class);
@@ -213,7 +213,7 @@ class PaymentServiceTest {
     @Test
     void applyRefundTransitionsToPartiallyRefundedWhenLessThanTheCapturedAmount() {
         Payment payment = capturedPayment(new BigDecimal("100.00"), new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
 
         paymentService.applyRefund(organizationId, payment.getId(), new BigDecimal("30.00"));
 
@@ -224,13 +224,61 @@ class PaymentServiceTest {
     @Test
     void applyRefundTransitionsToRefundedWhenTheFullCapturedAmountHasBeenRefunded() {
         Payment payment = capturedPayment(new BigDecimal("100.00"), new BigDecimal("100.00"));
-        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.lockByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
 
         paymentService.applyRefund(organizationId, payment.getId(), new BigDecimal("60.00"));
         paymentService.applyRefund(organizationId, payment.getId(), new BigDecimal("40.00"));
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
         assertThat(payment.getRefundedAmount()).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    void reconcileCaptureConfirmationAppliesCaptureWhenPaymentIsAuthorized() {
+        Payment payment = authorizedPayment(new BigDecimal("100.00"));
+        when(paymentRepository.lockByProviderCodeAndProviderReference(ProviderCode.MOCK, "mock_ch_existing"))
+                .thenReturn(Optional.of(payment));
+
+        paymentService.reconcileCaptureConfirmation(ProviderCode.MOCK, "mock_ch_existing", new BigDecimal("100.00"), "USD");
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CAPTURED);
+        assertThat(payment.getCapturedAmount()).isEqualByComparingTo("100.00");
+        verify(ledgerService).postCapture(organizationId, payment.getId(), new BigDecimal("100.00"), "USD");
+        verify(outboxWriter).write(eq("PAYMENT"), any(), eq("payment.captured"), eq(OutboxTopics.PAYMENTS), any());
+    }
+
+    @Test
+    void reconcileCaptureConfirmationIsANoOpWhenPaymentIsAlreadyCaptured() {
+        Payment payment = capturedPayment(new BigDecimal("100.00"), new BigDecimal("100.00"));
+        when(paymentRepository.lockByProviderCodeAndProviderReference(ProviderCode.MOCK, "mock_ch_existing"))
+                .thenReturn(Optional.of(payment));
+
+        paymentService.reconcileCaptureConfirmation(ProviderCode.MOCK, "mock_ch_existing", new BigDecimal("100.00"), "USD");
+
+        verify(ledgerService, never()).postCapture(any(), any(), any(), any());
+        verify(outboxWriter, never()).write(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void reconcileCaptureConfirmationIsANoOpWhenNoMatchingPaymentExists() {
+        when(paymentRepository.lockByProviderCodeAndProviderReference(ProviderCode.MOCK, "mock_ch_unknown"))
+                .thenReturn(Optional.empty());
+
+        paymentService.reconcileCaptureConfirmation(ProviderCode.MOCK, "mock_ch_unknown", new BigDecimal("100.00"), "USD");
+
+        verify(ledgerService, never()).postCapture(any(), any(), any(), any());
+    }
+
+    @Test
+    void reconcileCaptureConfirmationIsANoOpWhenTheWebhookAmountExceedsWhatCanStillBeCaptured() {
+        Payment payment = authorizedPayment(new BigDecimal("100.00"));
+        when(paymentRepository.lockByProviderCodeAndProviderReference(ProviderCode.MOCK, "mock_ch_existing"))
+                .thenReturn(Optional.of(payment));
+
+        paymentService.reconcileCaptureConfirmation(ProviderCode.MOCK, "mock_ch_existing", new BigDecimal("999.00"), "USD");
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.AUTHORIZED);
+        verify(ledgerService, never()).postCapture(any(), any(), any(), any());
     }
 
     private Payment newPayment(BigDecimal amount) {

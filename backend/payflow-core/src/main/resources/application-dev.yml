@@ -21,6 +21,7 @@ payflow:
   provider:
     mock:
       base-url: ${MOCK_PROVIDER_BASE_URL:http://localhost:8081}
+      webhook-secret: ${MOCK_PROVIDER_WEBHOOK_SECRET:dev-mock-webhook-secret-3f8a91c2}
 
 logging:
   level:

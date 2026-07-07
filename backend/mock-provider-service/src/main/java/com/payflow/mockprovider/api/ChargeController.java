@@ -3,6 +3,7 @@ package com.payflow.mockprovider.api;
 import com.payflow.mockprovider.ChargeStore;
 import com.payflow.mockprovider.domain.MockCharge;
 import com.payflow.mockprovider.domain.MockChargeStatus;
+import com.payflow.mockprovider.webhook.WebhookSender;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,21 +15,26 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Deterministic, always-succeeds behavior for M2. Configurable
- * latency/failure/retry simulation is M11 (Mock Provider hardening).
+ * latency/failure/retry simulation is M11 (Mock Provider hardening). Every
+ * successful operation also fires an async signed webhook, regardless of
+ * the synchronous response - see EDD section 5.3.
  */
 @RestController
 @RequestMapping("/provider/v1/charges")
 public class ChargeController {
 
     private final ChargeStore chargeStore;
+    private final WebhookSender webhookSender;
 
-    public ChargeController(ChargeStore chargeStore) {
+    public ChargeController(ChargeStore chargeStore, WebhookSender webhookSender) {
         this.chargeStore = chargeStore;
+        this.webhookSender = webhookSender;
     }
 
     @PostMapping
     public ResponseEntity<ChargeResponse> createCharge(@RequestBody ChargeRequest request) {
         MockCharge charge = chargeStore.create(request.amount(), request.currency());
+        webhookSender.sendAsync("charge.authorized", charge.getChargeId(), charge.getAmount(), charge.getCurrency());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ChargeResponse(charge.getChargeId(), "AUTHORIZED", null));
     }
@@ -46,6 +52,7 @@ public class ChargeController {
         }
 
         chargeStore.markCaptured(chargeId);
+        webhookSender.sendAsync("charge.captured", chargeId, request.amount(), request.currency());
         return ResponseEntity.ok(new CaptureResponse("CAPTURED", null));
     }
 
@@ -61,6 +68,7 @@ public class ChargeController {
                     HttpStatus.CONFLICT, "Charge is not in a refundable state: " + chargeId);
         }
 
+        webhookSender.sendAsync("charge.refunded", chargeId, request.amount(), request.currency());
         return ResponseEntity.ok(new RefundResponse("REFUNDED", null));
     }
 }

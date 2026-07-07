@@ -10,3 +10,11 @@ management:
     web:
       exposure:
         include: health,info
+
+payflow:
+  webhook:
+    callback-base-url: ${PAYFLOW_CORE_BASE_URL:http://localhost:8080}
+    # Must match payflow-core's payflow.provider.mock.webhook-secret exactly
+    # - this is the shared secret both sides sign/verify inbound webhooks
+    # with (see ADR-0011, EDD section 5.4).
+    secret: ${MOCK_PROVIDER_WEBHOOK_SECRET:dev-mock-webhook-secret-3f8a91c2}
