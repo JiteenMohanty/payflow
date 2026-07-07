@@ -1,8 +1,10 @@
 package com.payflow.core.refund.application;
 
+import com.payflow.core.common.event.OutboxTopics;
 import com.payflow.core.common.exception.DomainValidationException;
 import com.payflow.core.common.provider.ProviderCode;
 import com.payflow.core.ledger.application.LedgerService;
+import com.payflow.core.outbox.application.OutboxWriter;
 import com.payflow.core.payment.application.PaymentRefundContext;
 import com.payflow.core.payment.application.PaymentRefundSupport;
 import com.payflow.core.provider.ProviderClient;
@@ -24,6 +26,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,6 +44,8 @@ class RefundServiceTest {
     private ProviderClient providerClient;
     @Mock
     private LedgerService ledgerService;
+    @Mock
+    private OutboxWriter outboxWriter;
 
     private RefundService refundService;
 
@@ -49,7 +54,7 @@ class RefundServiceTest {
 
     @BeforeEach
     void setUp() {
-        refundService = new RefundService(refundRepository, paymentRefundSupport, providerRegistry, ledgerService);
+        refundService = new RefundService(refundRepository, paymentRefundSupport, providerRegistry, ledgerService, outboxWriter);
     }
 
     @Test
@@ -61,7 +66,9 @@ class RefundServiceTest {
 
         assertThat(summary.amount()).isEqualByComparingTo("100.00");
         verify(paymentRefundSupport).applyRefund(organizationId, paymentId, new BigDecimal("100.00"));
-        verify(ledgerService).postRefund(any(), any(), any(), org.mockito.ArgumentMatchers.eq(new BigDecimal("100.00")), any());
+        verify(ledgerService).postRefund(any(), any(), any(), eq(new BigDecimal("100.00")), any());
+        verify(outboxWriter).write(eq("REFUND"), any(), eq("refund.succeeded"), eq(OutboxTopics.REFUNDS), any());
+        verify(outboxWriter).write(eq("LEDGER_TRANSACTION"), any(), eq("ledger.transaction_recorded"), eq(OutboxTopics.LEDGER), any());
     }
 
     @Test
@@ -128,6 +135,7 @@ class RefundServiceTest {
         verify(refundRepository, never()).save(any());
         verify(paymentRefundSupport, never()).applyRefund(any(), any(), any());
         verify(ledgerService, never()).postRefund(any(), any(), any(), any(), any());
+        verify(outboxWriter, never()).write(any(), any(), any(), any(), any());
     }
 
     private void stubRefundableContext(BigDecimal capturedAmount, BigDecimal refundedAmount) {

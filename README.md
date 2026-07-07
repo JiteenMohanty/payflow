@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: M5 — Refunds complete.** Full and partial refunds post the reverse double-entry ledger transaction, in the same transaction as the payment's own state change. No webhooks or outbox yet — those are M6-M8. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
+> **Status: M6 — Outbox + Kafka complete.** Every payment/refund/ledger state change writes an outbox row in the same transaction, relayed to Kafka by a scheduled poller with retry and dead-lettering. No webhooks yet — nothing consumes these topics until M7/M8. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
 
 ## Why a platform, not a gateway
 
@@ -115,6 +115,13 @@ curl -X POST http://localhost:8080/v1/payments/<paymentId>/refunds \
 
 # The same ledger endpoint now also shows the reversing entries this refund posted.
 curl http://localhost:8080/v1/ledger/entries?paymentId=<paymentId> -H "Authorization: Bearer <apiKey>"
+```
+
+Every mutation above also wrote an outbox row, relayed to Kafka by a scheduled poller (nothing consumes these topics yet - that's M7/M8). Watch it happen directly:
+
+```bash
+docker exec payflow-kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 --topic payflow.payments --from-beginning --property print.key=true
 ```
 
 Running the full test suite (`mvn verify`) requires a working Docker environment reachable by Testcontainers. On Windows with Docker Desktop, `docker compose` and plain `docker` commands work fine, but some Docker Desktop builds have a known Testcontainers/docker-java incompatibility over the Windows named pipe API — if `mvn verify` fails with `Could not find a valid Docker environment` while `docker ps` works, this is a local environment issue, not a code issue (GitHub Actions CI runs native Linux Docker, unaffected).

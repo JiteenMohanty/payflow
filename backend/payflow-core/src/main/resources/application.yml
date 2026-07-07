@@ -7,6 +7,21 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        # KafkaTemplate.send() itself blocks synchronously while the
+        # producer fetches initial cluster metadata - that block is bounded
+        # by max.block.ms, NOT by OutboxPublisher's own .get(timeout) call
+        # on the returned future (found via manual verification: with
+        # Kafka down, each retry attempt took ~60s, the client default,
+        # instead of OutboxPublisher's intended ~5s). Set below its own
+        # SEND_TIMEOUT_SECONDS so that timeout is actually the effective
+        # bound on how long one publish attempt can take.
+        max.block.ms: 3000
 
 server:
   port: 8080
@@ -28,3 +43,7 @@ payflow:
   idempotency:
     key-ttl-hours: 24
     redis-cache-ttl-minutes: 60
+  outbox:
+    poll-interval-ms: 500
+    batch-size: 100
+    max-retries: 5

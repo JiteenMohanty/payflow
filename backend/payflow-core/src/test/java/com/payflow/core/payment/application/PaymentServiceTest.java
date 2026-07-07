@@ -1,5 +1,6 @@
 package com.payflow.core.payment.application;
 
+import com.payflow.core.common.event.OutboxTopics;
 import com.payflow.core.common.exception.DomainValidationException;
 import com.payflow.core.common.exception.ResourceNotFoundException;
 import com.payflow.core.common.provider.ProviderCode;
@@ -10,6 +11,7 @@ import com.payflow.core.merchant.application.ProviderAccountResolver;
 import com.payflow.core.merchant.application.ProviderAccountSummary;
 import com.payflow.core.merchant.domain.MerchantStatus;
 import com.payflow.core.merchant.domain.ProviderAccountStatus;
+import com.payflow.core.outbox.application.OutboxWriter;
 import com.payflow.core.payment.domain.IllegalPaymentTransitionException;
 import com.payflow.core.payment.domain.Payment;
 import com.payflow.core.payment.domain.PaymentStatus;
@@ -35,6 +37,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -56,6 +59,8 @@ class PaymentServiceTest {
     private ProviderClient providerClient;
     @Mock
     private LedgerService ledgerService;
+    @Mock
+    private OutboxWriter outboxWriter;
 
     private PaymentService paymentService;
 
@@ -65,7 +70,7 @@ class PaymentServiceTest {
     @BeforeEach
     void setUp() {
         paymentService = new PaymentService(paymentRepository, transitionRepository, merchantLookupService,
-                providerAccountResolver, providerRegistry, ledgerService);
+                providerAccountResolver, providerRegistry, ledgerService, outboxWriter);
     }
 
     @Test
@@ -79,6 +84,7 @@ class PaymentServiceTest {
 
         assertThat(summary.status()).isEqualTo(PaymentStatus.CREATED);
         assertThat(summary.amount()).isEqualByComparingTo("100.00");
+        verify(outboxWriter).write(eq("PAYMENT"), any(), eq("payment.created"), eq(OutboxTopics.PAYMENTS), any());
     }
 
     @Test
@@ -144,6 +150,8 @@ class PaymentServiceTest {
         assertThat(summary.status()).isEqualTo(PaymentStatus.CAPTURED);
         assertThat(summary.capturedAmount()).isEqualByComparingTo("100.00");
         verify(ledgerService).postCapture(organizationId, payment.getId(), new BigDecimal("100.00"), "USD");
+        verify(outboxWriter).write(eq("PAYMENT"), any(), eq("payment.captured"), eq(OutboxTopics.PAYMENTS), any());
+        verify(outboxWriter).write(eq("LEDGER_TRANSACTION"), any(), eq("ledger.transaction_recorded"), eq(OutboxTopics.LEDGER), any());
     }
 
     @Test
@@ -166,6 +174,7 @@ class PaymentServiceTest {
                 .isInstanceOf(DomainValidationException.class);
 
         verify(ledgerService, never()).postCapture(any(), any(), any(), any());
+        verify(outboxWriter, never()).write(any(), any(), any(), any(), any());
     }
 
     @Test

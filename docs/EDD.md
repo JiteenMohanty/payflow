@@ -318,6 +318,8 @@ erDiagram
         string status
         int retry_count
         string kafka_topic
+        timestamp created_at
+        timestamp updated_at
     }
     DEAD_LETTER_EVENTS {
         uuid id PK
@@ -325,6 +327,7 @@ erDiagram
         uuid source_id
         jsonb payload
         string error_reason
+        timestamp created_at
     }
 ```
 

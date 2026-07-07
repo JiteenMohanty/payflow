@@ -1,5 +1,8 @@
 package com.payflow.core.payment.application;
 
+import com.payflow.core.common.event.LedgerEventPayload;
+import com.payflow.core.common.event.OutboxTopics;
+import com.payflow.core.common.event.PaymentEventPayload;
 import com.payflow.core.common.exception.DomainValidationException;
 import com.payflow.core.common.exception.ResourceNotFoundException;
 import com.payflow.core.ledger.application.LedgerService;
@@ -7,6 +10,7 @@ import com.payflow.core.merchant.application.MerchantLookupService;
 import com.payflow.core.merchant.application.MerchantSummary;
 import com.payflow.core.merchant.application.ProviderAccountResolver;
 import com.payflow.core.merchant.application.ProviderAccountSummary;
+import com.payflow.core.outbox.application.OutboxWriter;
 import com.payflow.core.payment.domain.Payment;
 import com.payflow.core.payment.domain.PaymentActor;
 import com.payflow.core.payment.domain.PaymentStateMachine;
@@ -27,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,6 +49,7 @@ public class PaymentService implements PaymentRefundSupport {
     private final ProviderAccountResolver providerAccountResolver;
     private final ProviderRegistry providerRegistry;
     private final LedgerService ledgerService;
+    private final OutboxWriter outboxWriter;
 
     @Transactional
     public PaymentSummary createPayment(
@@ -54,6 +60,7 @@ public class PaymentService implements PaymentRefundSupport {
         Payment payment = new Payment(organizationId, merchantId, amount, currency, description, metadata);
         paymentRepository.save(payment);
         recordTransition(payment, null, PaymentStatus.CREATED, PaymentActor.API, null);
+        emitPaymentEvent(payment, "payment.created");
 
         return toSummary(payment);
     }
@@ -78,10 +85,12 @@ public class PaymentService implements PaymentRefundSupport {
             case AUTHORIZED -> {
                 payment.markAuthorized(providerAccount.id(), providerAccount.providerCode(), result.providerReference());
                 recordTransition(payment, from, PaymentStatus.AUTHORIZED, PaymentActor.API, null);
+                emitPaymentEvent(payment, "payment.authorized");
             }
             case DECLINED -> {
                 payment.markAuthorizationFailed();
                 recordTransition(payment, from, PaymentStatus.FAILED, PaymentActor.API, result.failureReason());
+                emitPaymentEvent(payment, "payment.authorization_failed");
             }
         }
 
@@ -118,6 +127,8 @@ public class PaymentService implements PaymentRefundSupport {
         // captured payment with no ledger posting must never be a reachable
         // state, not just an unlikely one.
         ledgerService.postCapture(organizationId, payment.getId(), captureAmount, payment.getCurrency());
+        emitPaymentEvent(payment, "payment.captured");
+        emitLedgerEvent(organizationId, payment.getId(), "CAPTURE", captureAmount, payment.getCurrency());
 
         return toSummary(payment);
     }
@@ -202,5 +213,30 @@ public class PaymentService implements PaymentRefundSupport {
         return new PaymentTransitionSummary(
                 transition.getFromStatus(), transition.getToStatus(), transition.getActor(),
                 transition.getReason(), transition.getCreatedAt());
+    }
+
+    /**
+     * payment.capture_failed, payment.expired, and payment.canceled (all
+     * listed in EDD section 6) are deliberately not emitted yet: a failed
+     * capture throws and rolls back the whole transaction before anything
+     * commits (see capture() above), so there is no committed row to attach
+     * an event to, and expired/canceled have no producing code path until
+     * M9's scheduled sweep exists.
+     */
+    private void emitPaymentEvent(Payment payment, String eventType) {
+        PaymentEventPayload payload = new PaymentEventPayload(
+                payment.getId(), payment.getOrganizationId(), payment.getMerchantId(), payment.getStatus().name(),
+                payment.getAmount(), payment.getCurrency(), Instant.now());
+        outboxWriter.write("PAYMENT", payment.getId(), eventType, OutboxTopics.PAYMENTS, payload);
+    }
+
+    /**
+     * ledger.transaction_recorded is emitted here, not by the ledger module
+     * itself - ledger depends only on common (EDD section 3) and must not
+     * depend on outbox.
+     */
+    private void emitLedgerEvent(UUID organizationId, UUID paymentId, String transactionType, BigDecimal amount, String currency) {
+        LedgerEventPayload payload = new LedgerEventPayload(organizationId, paymentId, transactionType, amount, currency, Instant.now());
+        outboxWriter.write("LEDGER_TRANSACTION", paymentId, "ledger.transaction_recorded", OutboxTopics.LEDGER, payload);
     }
 }

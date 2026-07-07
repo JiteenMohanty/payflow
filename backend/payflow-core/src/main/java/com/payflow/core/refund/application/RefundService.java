@@ -1,8 +1,12 @@
 package com.payflow.core.refund.application;
 
+import com.payflow.core.common.event.LedgerEventPayload;
+import com.payflow.core.common.event.OutboxTopics;
+import com.payflow.core.common.event.RefundEventPayload;
 import com.payflow.core.common.exception.DomainValidationException;
 import com.payflow.core.common.exception.ResourceNotFoundException;
 import com.payflow.core.ledger.application.LedgerService;
+import com.payflow.core.outbox.application.OutboxWriter;
 import com.payflow.core.payment.application.PaymentRefundContext;
 import com.payflow.core.payment.application.PaymentRefundSupport;
 import com.payflow.core.provider.ProviderClient;
@@ -18,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
@@ -28,6 +33,7 @@ public class RefundService {
     private final PaymentRefundSupport paymentRefundSupport;
     private final ProviderRegistry providerRegistry;
     private final LedgerService ledgerService;
+    private final OutboxWriter outboxWriter;
 
     @Transactional
     public RefundSummary createRefund(UUID organizationId, UUID paymentId, BigDecimal requestedAmount, String reason) {
@@ -61,6 +67,8 @@ public class RefundService {
         // reachable state.
         paymentRefundSupport.applyRefund(organizationId, paymentId, refundAmount);
         ledgerService.postRefund(organizationId, paymentId, refund.getId(), refundAmount, payment.currency());
+        emitRefundEvent(refund);
+        emitLedgerEvent(organizationId, paymentId, refundAmount, payment.currency());
 
         return toSummary(refund);
     }
@@ -70,6 +78,26 @@ public class RefundService {
         Refund refund = refundRepository.findByIdAndOrganizationId(refundId, organizationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Refund not found: " + refundId));
         return toSummary(refund);
+    }
+
+    /**
+     * refund.created and refund.failed (both listed in EDD section 6) are
+     * deliberately not emitted: a refund resolves synchronously in one call
+     * (see Refund's own class-level note), so there is no distinct "created"
+     * moment before "succeeded", and a failed provider refund persists
+     * nothing at all, so there is no committed row to attach refund.failed
+     * to - same reasoning as PaymentService skipping capture_failed.
+     */
+    private void emitRefundEvent(Refund refund) {
+        RefundEventPayload payload = new RefundEventPayload(
+                refund.getId(), refund.getPaymentId(), refund.getOrganizationId(), refund.getAmount(),
+                refund.getCurrency(), Instant.now());
+        outboxWriter.write("REFUND", refund.getId(), "refund.succeeded", OutboxTopics.REFUNDS, payload);
+    }
+
+    private void emitLedgerEvent(UUID organizationId, UUID paymentId, BigDecimal amount, String currency) {
+        LedgerEventPayload payload = new LedgerEventPayload(organizationId, paymentId, "REFUND", amount, currency, Instant.now());
+        outboxWriter.write("LEDGER_TRANSACTION", paymentId, "ledger.transaction_recorded", OutboxTopics.LEDGER, payload);
     }
 
     private RefundSummary toSummary(Refund refund) {
