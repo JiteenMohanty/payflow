@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: M7 — Inbound webhooks + reconciliation complete.** The Mock Provider fires a signed async webhook after every charge operation; PayFlow verifies it, deduplicates it, and — for captures — reconciles payment state from it, so a lost synchronous response is never silently wrong. Outbound merchant webhooks are M8. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
+> **Status: M8 — Outbound webhooks complete.** Merchants register an HTTPS endpoint and a set of event types; every matching payment/refund event is signed (`X-PayFlow-Signature`) and delivered in near-real-time via a Kafka consumer. Registration is SSRF-guarded (no loopback/private/link-local targets). Scheduled retry of failed deliveries is M9. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
 
 ## Why a platform, not a gateway
 
@@ -117,7 +117,7 @@ curl -X POST http://localhost:8080/v1/payments/<paymentId>/refunds \
 curl http://localhost:8080/v1/ledger/entries?paymentId=<paymentId> -H "Authorization: Bearer <apiKey>"
 ```
 
-Every mutation above also wrote an outbox row, relayed to Kafka by a scheduled poller (nothing consumes these topics yet - that's M8). Watch it happen directly:
+Every mutation above also wrote an outbox row, relayed to Kafka by a scheduled poller. Watch it happen directly:
 
 ```bash
 docker exec payflow-kafka /opt/kafka/bin/kafka-console-consumer.sh \
@@ -133,6 +133,18 @@ curl -X POST http://localhost:8081/provider/v1/charges/<chargeId>/capture \
 # A moment later, PayFlow's own view of the payment has already moved to
 # CAPTURED - reconciled purely from the async webhook, actor=PROVIDER_WEBHOOK.
 curl http://localhost:8080/v1/payments/<paymentId> -H "Authorization: Bearer <apiKey>"
+```
+
+Register your own endpoint to receive payment/refund events - PayFlow signs every delivery (`X-PayFlow-Signature: t=<ts>,v1=<hex hmac-sha256>`) and refuses to register a loopback/private/link-local URL:
+
+```bash
+curl -X POST http://localhost:8080/v1/webhook-endpoints \
+  -H "Authorization: Bearer <apiKey>" -H "Content-Type: application/json" \
+  -d '{"url":"https://your-server.example.com/hooks/payflow","subscribedEvents":["payment.captured","refund.succeeded"]}'
+# Response includes a one-time-shown secret - save it, it's never returned again.
+
+# Delivery history for an endpoint:
+curl http://localhost:8080/v1/webhook-endpoints/<endpointId>/deliveries -H "Authorization: Bearer <apiKey>"
 ```
 
 Running the full test suite (`mvn verify`) requires a working Docker environment reachable by Testcontainers. On Windows with Docker Desktop, `docker compose` and plain `docker` commands work fine, but some Docker Desktop builds have a known Testcontainers/docker-java incompatibility over the Windows named pipe API — if `mvn verify` fails with `Could not find a valid Docker environment` while `docker ps` works, this is a local environment issue, not a code issue (GitHub Actions CI runs native Linux Docker, unaffected).

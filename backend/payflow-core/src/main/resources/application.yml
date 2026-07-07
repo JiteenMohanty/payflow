@@ -22,6 +22,14 @@ spring:
         # SEND_TIMEOUT_SECONDS so that timeout is actually the effective
         # bound on how long one publish attempt can take.
         max.block.ms: 3000
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # WebhookDispatcher's consumer group ("webhook-dispatcher") has never
+      # committed an offset on first connect - earliest means it processes
+      # whatever's already on the topic rather than silently skipping it,
+      # consistent with the project's at-least-once philosophy (ADR-0002).
+      auto-offset-reset: earliest
 
 server:
   port: 8080

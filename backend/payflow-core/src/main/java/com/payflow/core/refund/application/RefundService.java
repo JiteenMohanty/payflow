@@ -90,7 +90,7 @@ public class RefundService {
      */
     private void emitRefundEvent(Refund refund) {
         RefundEventPayload payload = new RefundEventPayload(
-                refund.getId(), refund.getPaymentId(), refund.getOrganizationId(), refund.getAmount(),
+                "refund.succeeded", refund.getId(), refund.getPaymentId(), refund.getOrganizationId(), refund.getAmount(),
                 refund.getCurrency(), Instant.now());
         outboxWriter.write("REFUND", refund.getId(), "refund.succeeded", OutboxTopics.REFUNDS, payload);
     }

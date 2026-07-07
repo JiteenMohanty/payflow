@@ -289,6 +289,8 @@ erDiagram
         string secret_encrypted
         jsonb subscribed_events
         string status
+        timestamp created_at
+        timestamp updated_at
     }
     WEBHOOK_DELIVERIES {
         uuid id PK
@@ -299,6 +301,8 @@ erDiagram
         string status
         int response_code
         timestamp next_retry_at
+        timestamp created_at
+        timestamp updated_at
     }
     INBOUND_WEBHOOK_EVENTS {
         uuid id PK

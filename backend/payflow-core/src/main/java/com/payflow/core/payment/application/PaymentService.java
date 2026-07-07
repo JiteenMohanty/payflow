@@ -288,7 +288,7 @@ public class PaymentService implements PaymentRefundSupport, PaymentReconciliati
      */
     private void emitPaymentEvent(Payment payment, String eventType) {
         PaymentEventPayload payload = new PaymentEventPayload(
-                payment.getId(), payment.getOrganizationId(), payment.getMerchantId(), payment.getStatus().name(),
+                eventType, payment.getId(), payment.getOrganizationId(), payment.getMerchantId(), payment.getStatus().name(),
                 payment.getAmount(), payment.getCurrency(), Instant.now());
         outboxWriter.write("PAYMENT", payment.getId(), eventType, OutboxTopics.PAYMENTS, payload);
     }
