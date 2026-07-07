@@ -179,6 +179,51 @@ class PaymentServiceTest {
         verify(providerRegistry, never()).resolve(any());
     }
 
+    @Test
+    void loadForRefundReturnsContextWhenPaymentIsCaptured() {
+        Payment payment = capturedPayment(new BigDecimal("100.00"), new BigDecimal("100.00"));
+        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+
+        PaymentRefundContext context = paymentService.loadForRefund(organizationId, payment.getId());
+
+        assertThat(context.capturedAmount()).isEqualByComparingTo("100.00");
+        assertThat(context.refundedAmount()).isEqualByComparingTo("0.00");
+        assertThat(context.providerReference()).isEqualTo("mock_ch_existing");
+        assertThat(context.providerCode()).isEqualTo(ProviderCode.MOCK);
+    }
+
+    @Test
+    void loadForRefundRejectsPaymentThatWasNeverCaptured() {
+        Payment payment = authorizedPayment(new BigDecimal("100.00"));
+        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+
+        assertThatThrownBy(() -> paymentService.loadForRefund(organizationId, payment.getId()))
+                .isInstanceOf(DomainValidationException.class);
+    }
+
+    @Test
+    void applyRefundTransitionsToPartiallyRefundedWhenLessThanTheCapturedAmount() {
+        Payment payment = capturedPayment(new BigDecimal("100.00"), new BigDecimal("100.00"));
+        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+
+        paymentService.applyRefund(organizationId, payment.getId(), new BigDecimal("30.00"));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PARTIALLY_REFUNDED);
+        assertThat(payment.getRefundedAmount()).isEqualByComparingTo("30.00");
+    }
+
+    @Test
+    void applyRefundTransitionsToRefundedWhenTheFullCapturedAmountHasBeenRefunded() {
+        Payment payment = capturedPayment(new BigDecimal("100.00"), new BigDecimal("100.00"));
+        when(paymentRepository.findByIdAndOrganizationId(payment.getId(), organizationId)).thenReturn(Optional.of(payment));
+
+        paymentService.applyRefund(organizationId, payment.getId(), new BigDecimal("60.00"));
+        paymentService.applyRefund(organizationId, payment.getId(), new BigDecimal("40.00"));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
+        assertThat(payment.getRefundedAmount()).isEqualByComparingTo("100.00");
+    }
+
     private Payment newPayment(BigDecimal amount) {
         Payment payment = new Payment(organizationId, merchantId, amount, "USD", null, null);
         ReflectionTestUtils.setField(payment, "id", UUID.randomUUID());
@@ -188,6 +233,12 @@ class PaymentServiceTest {
     private Payment authorizedPayment(BigDecimal amount) {
         Payment payment = newPayment(amount);
         payment.markAuthorized(UUID.randomUUID(), ProviderCode.MOCK, "mock_ch_existing");
+        return payment;
+    }
+
+    private Payment capturedPayment(BigDecimal amount, BigDecimal capturedAmount) {
+        Payment payment = authorizedPayment(amount);
+        payment.markCaptured(capturedAmount);
         return payment;
     }
 

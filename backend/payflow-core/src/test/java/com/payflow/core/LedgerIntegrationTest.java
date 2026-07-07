@@ -13,6 +13,9 @@ import com.payflow.core.ledger.persistence.LedgerEntryRepository;
 import com.payflow.core.ledger.persistence.LedgerTransactionRepository;
 import com.payflow.core.payment.api.CreatePaymentRequest;
 import com.payflow.core.payment.api.PaymentResponse;
+import com.payflow.core.refund.domain.Refund;
+import com.payflow.core.refund.domain.RefundStatus;
+import com.payflow.core.refund.persistence.RefundRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
@@ -49,6 +52,8 @@ class LedgerIntegrationTest extends AbstractIntegrationTest {
     private LedgerEntryRepository entryRepository;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private RefundRepository refundRepository;
 
     @Test
     void postCaptureCreatesBalancedEntriesAndReusesAccountsAcrossCaptures() {
@@ -82,7 +87,7 @@ class LedgerIntegrationTest extends AbstractIntegrationTest {
         LedgerAccount account = accountRepository.save(
                 new LedgerAccount(tenant.organizationId(), com.payflow.core.ledger.domain.LedgerAccountCode.PROVIDER_SETTLEMENT_RECEIVABLE));
         LedgerTransaction transaction = transactionRepository.save(
-                new LedgerTransaction(tenant.organizationId(), paymentId, LedgerTransactionType.ADJUSTMENT));
+                new LedgerTransaction(tenant.organizationId(), paymentId, null, LedgerTransactionType.ADJUSTMENT));
 
         assertThatThrownBy(() -> entryRepository.saveAndFlush(
                 new LedgerEntry(transaction, account, LedgerEntryType.DEBIT, new BigDecimal("10.00"), "USD")))
@@ -106,6 +111,40 @@ class LedgerIntegrationTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM ledger_entries WHERE id = ?", entryId))
                 .isInstanceOf(DataAccessException.class);
+    }
+
+    @Test
+    void postRefundCreatesReversedBalancedEntriesLinkedToTheRefund() {
+        Tenant tenant = provisionTenant();
+        UUID paymentId = createPayment(tenant);
+        ledgerService.postCapture(tenant.organizationId(), paymentId, new BigDecimal("50.00"), "USD");
+
+        Refund refund = refundRepository.save(new Refund(
+                tenant.organizationId(), paymentId, new BigDecimal("20.00"), "USD",
+                RefundStatus.SUCCEEDED, "requested_by_customer", "mock_ch_existing"));
+
+        ledgerService.postRefund(tenant.organizationId(), paymentId, refund.getId(), new BigDecimal("20.00"), "USD");
+
+        List<LedgerEntrySummary> entries =
+                ledgerQueryService.listEntries(tenant.organizationId(), paymentId, null, null, null);
+        assertThat(entries).hasSize(4);
+
+        UUID refundTransactionId = jdbcTemplate.queryForObject(
+                "SELECT id FROM ledger_transactions WHERE refund_id = ?", UUID.class, refund.getId());
+        List<Object[]> refundLegs = jdbcTemplate.query(
+                "SELECT la.code, le.entry_type, le.amount FROM ledger_entries le "
+                        + "JOIN ledger_accounts la ON la.id = le.ledger_account_id "
+                        + "WHERE le.ledger_transaction_id = ? ORDER BY le.entry_type",
+                (rs, rowNum) -> new Object[]{rs.getString(1), rs.getString(2), rs.getBigDecimal(3)},
+                refundTransactionId);
+
+        assertThat(refundLegs).hasSize(2);
+        assertThat(refundLegs).extracting(leg -> leg[1])
+                .containsExactlyInAnyOrder("DEBIT", "CREDIT");
+        assertThat(refundLegs).filteredOn(leg -> leg[1].equals("DEBIT"))
+                .extracting(leg -> leg[0]).containsExactly("merchant_payable");
+        assertThat(refundLegs).filteredOn(leg -> leg[1].equals("CREDIT"))
+                .extracting(leg -> leg[0]).containsExactly("provider_settlement_receivable");
     }
 
     private UUID createPayment(Tenant tenant) {

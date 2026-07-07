@@ -37,13 +37,28 @@ public class LedgerServiceImpl implements LedgerService, LedgerQueryService {
         LedgerAccount receivable = findOrCreateAccount(organizationId, LedgerAccountCode.PROVIDER_SETTLEMENT_RECEIVABLE);
         LedgerAccount payable = findOrCreateAccount(organizationId, LedgerAccountCode.MERCHANT_PAYABLE);
 
-        LedgerTransaction transaction = new LedgerTransaction(organizationId, paymentId, LedgerTransactionType.CAPTURE);
+        LedgerTransaction transaction = new LedgerTransaction(organizationId, paymentId, null, LedgerTransactionType.CAPTURE);
         transactionRepository.save(transaction);
 
         // Dr Provider Settlement Receivable / Cr Merchant Payable - the
         // deferred balance trigger validates both legs at commit time.
         entryRepository.save(new LedgerEntry(transaction, receivable, LedgerEntryType.DEBIT, amount, currency));
         entryRepository.save(new LedgerEntry(transaction, payable, LedgerEntryType.CREDIT, amount, currency));
+    }
+
+    @Override
+    @Transactional
+    public void postRefund(UUID organizationId, UUID paymentId, UUID refundId, BigDecimal amount, String currency) {
+        LedgerAccount receivable = findOrCreateAccount(organizationId, LedgerAccountCode.PROVIDER_SETTLEMENT_RECEIVABLE);
+        LedgerAccount payable = findOrCreateAccount(organizationId, LedgerAccountCode.MERCHANT_PAYABLE);
+
+        LedgerTransaction transaction = new LedgerTransaction(organizationId, paymentId, refundId, LedgerTransactionType.REFUND);
+        transactionRepository.save(transaction);
+
+        // Reverse of postCapture, per ADR-0008: Dr Merchant Payable / Cr
+        // Provider Settlement Receivable.
+        entryRepository.save(new LedgerEntry(transaction, payable, LedgerEntryType.DEBIT, amount, currency));
+        entryRepository.save(new LedgerEntry(transaction, receivable, LedgerEntryType.CREDIT, amount, currency));
     }
 
     @Override

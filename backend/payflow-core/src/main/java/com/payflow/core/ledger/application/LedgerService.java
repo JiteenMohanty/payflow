@@ -4,11 +4,13 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * Consumed by PaymentService.capture() within the same @Transactional
- * method as the payment's own state change - see ADR-0008. Only capture
- * posting exists for M4; postRefund() is additive when M5 needs it.
+ * Consumed by PaymentService.capture() and RefundService.createRefund()
+ * within the same @Transactional method as the payment/refund's own state
+ * change - see ADR-0008.
  */
 public interface LedgerService {
 
     void postCapture(UUID organizationId, UUID paymentId, BigDecimal amount, String currency);
+
+    void postRefund(UUID organizationId, UUID paymentId, UUID refundId, BigDecimal amount, String currency);
 }

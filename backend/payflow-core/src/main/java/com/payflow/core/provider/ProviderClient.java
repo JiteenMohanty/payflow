@@ -9,4 +9,6 @@ public interface ProviderClient {
     ProviderAuthorizationResult authorize(ProviderAuthorizationRequest request);
 
     ProviderCaptureResult capture(ProviderCaptureRequest request);
+
+    ProviderRefundResult refund(ProviderRefundRequest request);
 }

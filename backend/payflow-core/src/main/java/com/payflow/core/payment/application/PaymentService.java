@@ -33,7 +33,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class PaymentService {
+public class PaymentService implements PaymentRefundSupport {
 
     private static final int DEFAULT_LIST_LIMIT = 20;
     private static final int MAX_LIST_LIMIT = 100;
@@ -120,6 +120,32 @@ public class PaymentService {
         ledgerService.postCapture(organizationId, payment.getId(), captureAmount, payment.getCurrency());
 
         return toSummary(payment);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PaymentRefundContext loadForRefund(UUID organizationId, UUID paymentId) {
+        Payment payment = loadOwnedPayment(organizationId, paymentId);
+        if (payment.getStatus() != PaymentStatus.CAPTURED && payment.getStatus() != PaymentStatus.PARTIALLY_REFUNDED) {
+            throw new DomainValidationException("Payment is not in a refundable state: " + payment.getStatus());
+        }
+        return new PaymentRefundContext(
+                payment.getId(), payment.getCapturedAmount(), payment.getRefundedAmount(),
+                payment.getCurrency(), payment.getProviderReference(), payment.getProviderCode());
+    }
+
+    @Override
+    @Transactional
+    public void applyRefund(UUID organizationId, UUID paymentId, BigDecimal refundAmount) {
+        Payment payment = loadOwnedPayment(organizationId, paymentId);
+        BigDecimal newRefundedAmount = payment.getRefundedAmount().add(refundAmount);
+        PaymentStatus targetStatus = newRefundedAmount.compareTo(payment.getCapturedAmount()) >= 0
+                ? PaymentStatus.REFUNDED
+                : PaymentStatus.PARTIALLY_REFUNDED;
+
+        PaymentStatus from = payment.getStatus();
+        payment.applyRefund(refundAmount, targetStatus);
+        recordTransition(payment, from, targetStatus, PaymentActor.API, null);
     }
 
     @Transactional(readOnly = true)

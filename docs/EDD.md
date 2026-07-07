@@ -247,6 +247,7 @@ erDiagram
         string status
         string reason
         string provider_reference
+        timestamp created_at
     }
     IDEMPOTENCY_KEYS {
         uuid id PK

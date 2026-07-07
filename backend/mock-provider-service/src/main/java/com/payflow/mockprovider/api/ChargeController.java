@@ -48,4 +48,19 @@ public class ChargeController {
         chargeStore.markCaptured(chargeId);
         return ResponseEntity.ok(new CaptureResponse("CAPTURED", null));
     }
+
+    @PostMapping("/{chargeId}/refund")
+    public ResponseEntity<RefundResponse> refund(
+            @PathVariable String chargeId,
+            @RequestBody RefundRequest request) {
+        MockCharge charge = chargeStore.find(chargeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Charge not found: " + chargeId));
+
+        if (charge.getStatus() != MockChargeStatus.CAPTURED) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "Charge is not in a refundable state: " + chargeId);
+        }
+
+        return ResponseEntity.ok(new RefundResponse("REFUNDED", null));
+    }
 }

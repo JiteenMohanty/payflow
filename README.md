@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: M4 — Ledger complete.** Every capture posts an immutable, balanced double-entry ledger transaction — enforced by real database triggers, not just application code. No webhooks or outbox yet — those are M6-M8. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
+> **Status: M5 — Refunds complete.** Full and partial refunds post the reverse double-entry ledger transaction, in the same transaction as the payment's own state change. No webhooks or outbox yet — those are M6-M8. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
 
 ## Why a platform, not a gateway
 
@@ -103,6 +103,17 @@ curl -X POST http://localhost:8080/v1/payments \
 See the double-entry ledger a capture posted (immutable — `UPDATE`/`DELETE` on these rows is rejected by the database itself, not just the application):
 
 ```bash
+curl http://localhost:8080/v1/ledger/entries?paymentId=<paymentId> -H "Authorization: Bearer <apiKey>"
+```
+
+Refund it (full or partial - omit `amount` to refund whatever's still capturable):
+
+```bash
+curl -X POST http://localhost:8080/v1/payments/<paymentId>/refunds \
+  -H "Authorization: Bearer <apiKey>" -H "Content-Type: application/json" \
+  -d '{"amount":"50.00","reason":"requested_by_customer"}'
+
+# The same ledger endpoint now also shows the reversing entries this refund posted.
 curl http://localhost:8080/v1/ledger/entries?paymentId=<paymentId> -H "Authorization: Bearer <apiKey>"
 ```
 

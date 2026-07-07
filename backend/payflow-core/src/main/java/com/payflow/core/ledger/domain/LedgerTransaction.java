@@ -38,6 +38,9 @@ public class LedgerTransaction {
     @Column(name = "payment_id", nullable = false)
     private UUID paymentId;
 
+    @Column(name = "refund_id")
+    private UUID refundId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "transaction_type", nullable = false, length = 20)
     private LedgerTransactionType transactionType;
@@ -45,9 +48,10 @@ public class LedgerTransaction {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    public LedgerTransaction(UUID organizationId, UUID paymentId, LedgerTransactionType transactionType) {
+    public LedgerTransaction(UUID organizationId, UUID paymentId, UUID refundId, LedgerTransactionType transactionType) {
         this.organizationId = organizationId;
         this.paymentId = paymentId;
+        this.refundId = refundId;
         this.transactionType = transactionType;
     }
 

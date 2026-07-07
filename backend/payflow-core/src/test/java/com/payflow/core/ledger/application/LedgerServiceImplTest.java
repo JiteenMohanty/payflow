@@ -121,6 +121,33 @@ class LedgerServiceImplTest {
                 .findByOrganizationIdAndCode(organizationId, LedgerAccountCode.PROVIDER_SETTLEMENT_RECEIVABLE.dbCode());
     }
 
+    @Test
+    void postRefundPostsTheReverseOfACapture() {
+        UUID refundId = UUID.randomUUID();
+        when(accountRepository.findByOrganizationIdAndCode(eq(organizationId), any()))
+                .thenReturn(Optional.empty());
+        when(accountWriter.create(eq(organizationId), any(LedgerAccountCode.class)))
+                .thenAnswer(inv -> account(organizationId, inv.getArgument(1)));
+        when(transactionRepository.save(any())).thenAnswer(inv -> {
+            var transaction = inv.getArgument(0, com.payflow.core.ledger.domain.LedgerTransaction.class);
+            ReflectionTestUtils.setField(transaction, "id", UUID.randomUUID());
+            return transaction;
+        });
+        ArgumentCaptor<LedgerEntry> entryCaptor = ArgumentCaptor.forClass(LedgerEntry.class);
+        when(entryRepository.save(entryCaptor.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+        ledgerService.postRefund(organizationId, paymentId, refundId, new BigDecimal("30.00"), "USD");
+
+        var entries = entryCaptor.getAllValues();
+        assertThat(entries).hasSize(2);
+        assertThat(entries.get(0).getEntryType()).isEqualTo(LedgerEntryType.DEBIT);
+        assertThat(entries.get(0).getLedgerAccount().getCode()).isEqualTo(LedgerAccountCode.MERCHANT_PAYABLE.dbCode());
+        assertThat(entries.get(1).getEntryType()).isEqualTo(LedgerEntryType.CREDIT);
+        assertThat(entries.get(1).getLedgerAccount().getCode()).isEqualTo(LedgerAccountCode.PROVIDER_SETTLEMENT_RECEIVABLE.dbCode());
+        assertThat(entries.get(0).getAmount()).isEqualByComparingTo("30.00");
+        assertThat(entries.get(1).getAmount()).isEqualByComparingTo("30.00");
+    }
+
     private LedgerAccount account(UUID organizationId, LedgerAccountCode code) {
         LedgerAccount account = new LedgerAccount(organizationId, code);
         ReflectionTestUtils.setField(account, "id", UUID.randomUUID());

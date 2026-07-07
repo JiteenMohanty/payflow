@@ -122,6 +122,12 @@ public class Payment {
         this.capturedAt = Instant.now();
     }
 
+    public void applyRefund(BigDecimal refundAmount, PaymentStatus targetStatus) {
+        PaymentStateMachine.validateTransition(status, targetStatus);
+        this.refundedAmount = this.refundedAmount.add(refundAmount);
+        this.status = targetStatus;
+    }
+
     @PrePersist
     void onCreate() {
         this.createdAt = Instant.now();
