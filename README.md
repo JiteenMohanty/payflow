@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: M13 — Deployment complete.** PayFlow now ships as three Docker images (`payflow-core`, `mock-provider-service`, and an Nginx image serving the admin dashboard + reverse-proxying the API), a production Compose file where only Nginx is exposed to the host, and a GitHub Actions pipeline that publishes versioned images to GHCR on every merge to `main`. Verified end-to-end locally with a self-signed certificate standing in for a real one: a full signup-through-capture flow works entirely through Nginx's TLS termination, with both application services fully containerized and talking to each other over the internal network. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for how to run it on a real VPS, [ADR-0013](docs/adr/0013-deployment-architecture.md) for the reasoning, and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
+> **Status: v1.0.0 — feature-complete, M0 through M14.** Every milestone in the roadmap below has shipped: tenancy and security, the full payment/refund/ledger lifecycle, idempotency, outbox-driven Kafka events, inbound and outbound webhooks with signature verification and reconciliation, five scheduled consistency jobs, full observability (Prometheus/Grafana/Jaeger/structured logs), a hardened Mock Provider (chaos simulation + retry/circuit-breaker resilience), a React admin dashboard, and a production Docker/Nginx/GHCR deployment pipeline — all verified against real, live services at every step, not just unit-tested in isolation. See [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for the full milestone sequence and [`CHANGELOG.md`](CHANGELOG.md) for what shipped in each one.
 
 ## Why a platform, not a gateway
 
@@ -18,7 +18,7 @@ A payment gateway processes a charge. An orchestration platform sits above one o
 - Full observability by default: Micrometer, Prometheus, Grafana, OpenTelemetry, Jaeger, structured JSON logs with correlation IDs.
 - A React 18 / TypeScript admin dashboard for organizations to view payments, ledger entries, webhook history, and issue refunds.
 
-Full architecture (C4 diagrams, database schema, API contracts, event flows, sequence diagrams, and all 12 ADRs) lives in [`docs/EDD.md`](docs/EDD.md) and [`docs/adr/`](docs/adr/README.md).
+Full architecture (C4 diagrams, database schema, API contracts, event flows, sequence diagrams, and all 13 ADRs) lives in [`docs/EDD.md`](docs/EDD.md) and [`docs/adr/`](docs/adr/README.md).
 
 ## Repository Structure
 

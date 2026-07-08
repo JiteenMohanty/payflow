@@ -822,18 +822,19 @@ Milestones execute strictly in order; a milestone isn't "done" until its tests, 
 
 See [docs/adr/README.md](adr/README.md) for the full list. Key decisions:
 
-- [ADR-001](adr/0001-modular-monolith.md) — Modular Monolith over Microservices
-- [ADR-002](adr/0002-kafka-event-streaming.md) — Kafka for Event Streaming
-- [ADR-003](adr/0003-postgresql.md) — PostgreSQL as Primary Datastore
-- [ADR-004](adr/0004-redis.md) — Redis for Idempotency Cache & Rate Limiting
-- [ADR-005](adr/0005-transactional-outbox.md) — Transactional Outbox Pattern
-- [ADR-006](adr/0006-provider-abstraction.md) — Provider Abstraction via Adapter Interface
-- [ADR-007](adr/0007-idempotency-strategy.md) — Stripe-style Idempotency Key Design
-- [ADR-008](adr/0008-double-entry-ledger.md) — Immutable Double-Entry Ledger
-- [ADR-009](adr/0009-multi-tenancy-strategy.md) — Multi-Tenancy via Row-Level Organization Scoping
-- [ADR-010](adr/0010-authentication-strategy.md) — API Keys (merchants) + JWT (dashboard)
-- [ADR-011](adr/0011-webhook-reconciliation.md) — Webhooks as Reconciliation Source of Truth
-- [ADR-012](adr/0012-observability-stack.md) — Observability Stack Selection
+- [ADR-0001](adr/0001-modular-monolith.md) — Modular Monolith over Microservices
+- [ADR-0002](adr/0002-kafka-event-streaming.md) — Kafka for Event Streaming
+- [ADR-0003](adr/0003-postgresql.md) — PostgreSQL as Primary Datastore
+- [ADR-0004](adr/0004-redis.md) — Redis for Idempotency Cache & Rate Limiting
+- [ADR-0005](adr/0005-transactional-outbox.md) — Transactional Outbox Pattern
+- [ADR-0006](adr/0006-provider-abstraction.md) — Provider Abstraction via Adapter Interface
+- [ADR-0007](adr/0007-idempotency-strategy.md) — Stripe-style Idempotency Key Design
+- [ADR-0008](adr/0008-double-entry-ledger.md) — Immutable Double-Entry Ledger
+- [ADR-0009](adr/0009-multi-tenancy-strategy.md) — Multi-Tenancy via Row-Level Organization Scoping
+- [ADR-0010](adr/0010-authentication-strategy.md) — API Keys (merchants) + JWT (dashboard)
+- [ADR-0011](adr/0011-webhook-reconciliation.md) — Webhooks as Reconciliation Source of Truth
+- [ADR-0012](adr/0012-observability-stack.md) — Observability Stack Selection
+- [ADR-0013](adr/0013-deployment-architecture.md) — Deployment Architecture
 
 ---
 
