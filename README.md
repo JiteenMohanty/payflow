@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: M10 — Observability complete.** Metrics (Prometheus + Grafana), distributed tracing (OpenTelemetry + Jaeger), and structured JSON logs are wired across both services, with a correlation id threaded through every HTTP call, Kafka hop, and async boundary a payment's lifecycle can take — including the outbound-to-Mock-Provider-and-back-via-webhook path, verified end to end as a single correctly-parented trace. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
+> **Status: M11 — Mock Provider hardening complete.** The Mock Provider now simulates real-world unreliability — randomized latency and a configurable failure rate on every call — and `ProviderClient` calls are protected by retry-with-backoff and a circuit breaker (Resilience4j), verified live: a 50% simulated failure rate was absorbed by retry with zero failed payments, and a sustained outage tripped the circuit breaker to fail fast rather than pile up retries. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
 
 ## Why a platform, not a gateway
 

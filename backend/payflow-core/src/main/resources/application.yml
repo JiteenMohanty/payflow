@@ -75,6 +75,36 @@ management:
       # not a container-to-container address.
       endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
 
+# EDD risk table (section 12): "Exponential backoff with jitter on ... provider
+# client retries; circuit breaker around ProviderClient" - one shared named
+# instance for now (only the Mock Provider adapter exists), applied generically
+# to every ProviderClient by ResilientProviderClient (M11) regardless of which
+# provider it wraps.
+resilience4j:
+  retry:
+    instances:
+      providerClient:
+        max-attempts: 3
+        wait-duration: 200ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true
+        randomized-wait-factor: 0.5
+        retry-exceptions:
+          - com.payflow.core.common.exception.ProviderCommunicationException
+  circuitbreaker:
+    instances:
+      providerClient:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - com.payflow.core.common.exception.ProviderCommunicationException
+
 payflow:
   security:
     jwt:

@@ -15,10 +15,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Deterministic, always-succeeds behavior for M2. Configurable
- * latency/failure/retry simulation is M11 (Mock Provider hardening). Every
- * successful operation also fires an async signed webhook, regardless of
- * the synchronous response - see EDD section 5.3.
+ * Latency and failure simulation (EDD section 5.3, M11) live in ChaosFilter,
+ * applied ahead of every /provider/v1/** request - these handlers stay
+ * deterministic themselves. Every successful operation also fires an async
+ * signed webhook, regardless of the synchronous response - see EDD section
+ * 5.3.
  */
 @RestController
 @RequestMapping("/provider/v1/charges")
@@ -34,7 +35,7 @@ public class ChargeController {
 
     @PostMapping
     public ResponseEntity<ChargeResponse> createCharge(@RequestBody ChargeRequest request) {
-        MockCharge charge = chargeStore.create(request.amount(), request.currency());
+        MockCharge charge = chargeStore.create(request.amount(), request.currency(), request.merchantReference());
         webhookSender.sendAsync("charge.authorized", charge.getChargeId(), charge.getAmount(), charge.getCurrency());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ChargeResponse(charge.getChargeId(), "AUTHORIZED", null));

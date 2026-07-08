@@ -33,3 +33,12 @@ payflow:
     # - this is the shared secret both sides sign/verify inbound webhooks
     # with (see ADR-0011, EDD section 5.4).
     secret: ${MOCK_PROVIDER_WEBHOOK_SECRET:dev-mock-webhook-secret-3f8a91c2}
+  mock:
+    chaos:
+      # EDD section 5.3's real range - see ChaosProperties for why latency
+      # defaults on but failureRate defaults to 0.
+      latency-enabled: ${CHAOS_LATENCY_ENABLED:true}
+      latency-min-ms: ${CHAOS_LATENCY_MIN_MS:50}
+      latency-max-ms: ${CHAOS_LATENCY_MAX_MS:2000}
+      failure-enabled: ${CHAOS_FAILURE_ENABLED:true}
+      failure-rate: ${CHAOS_FAILURE_RATE:0.0}
