@@ -19,7 +19,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class WebhookEndpointService {
+public class WebhookEndpointService implements WebhookDeliveryQueryService {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final String SECRET_PREFIX = "whsec_";
@@ -46,6 +46,7 @@ public class WebhookEndpointService {
         return new CreateWebhookEndpointResult(toSummary(endpoint), secret);
     }
 
+    @Override
     @Transactional(readOnly = true)
     public List<WebhookEndpointSummary> listEndpoints(UUID organizationId) {
         return endpointRepository.findByOrganizationId(organizationId).stream()
@@ -58,6 +59,7 @@ public class WebhookEndpointService {
         loadOwnedEndpoint(organizationId, endpointId).disable();
     }
 
+    @Override
     @Transactional(readOnly = true)
     public List<WebhookDeliverySummary> listDeliveries(UUID organizationId, UUID endpointId) {
         loadOwnedEndpoint(organizationId, endpointId);

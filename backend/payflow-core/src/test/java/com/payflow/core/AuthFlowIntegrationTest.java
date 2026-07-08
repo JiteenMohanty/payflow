@@ -9,7 +9,9 @@ import com.payflow.core.organization.api.CreateApiKeyRequest;
 import com.payflow.core.organization.api.CreateApiKeyResponse;
 import com.payflow.core.organization.api.CreateOrganizationRequest;
 import com.payflow.core.organization.api.CreateOrganizationResponse;
+import com.payflow.core.organization.api.OrganizationMembershipResponse;
 import com.payflow.core.organization.domain.ApiKeyEnvironment;
+import com.payflow.core.organization.domain.OrganizationRole;
 import com.payflow.core.security.api.LoginRequest;
 import com.payflow.core.security.api.LoginResponse;
 import com.payflow.core.security.api.RefreshRequest;
@@ -107,6 +109,30 @@ class AuthFlowIntegrationTest extends AbstractIntegrationTest {
 
         ResponseEntity<String> response = restTemplate.exchange(
                 "/v1/organizations/" + otherOrganizationId, HttpMethod.GET, authed(accessToken), String.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void mineListsEveryOrganizationTheUserBelongsToWithTheirRole() {
+        ResponseEntity<OrganizationMembershipResponse[]> response = restTemplate.exchange(
+                "/v1/organizations/mine", HttpMethod.GET, authed(accessToken), OrganizationMembershipResponse[].class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).hasSize(1);
+        assertThat(response.getBody()[0].organizationId()).isEqualTo(organizationId);
+        assertThat(response.getBody()[0].role()).isEqualTo(OrganizationRole.OWNER);
+    }
+
+    @Test
+    void mineIsForbiddenForAnApiKeyPrincipal() {
+        ResponseEntity<CreateApiKeyResponse> createResponse = restTemplate.exchange(
+                "/v1/organizations/" + organizationId + "/api-keys", HttpMethod.POST,
+                authed(accessToken, new CreateApiKeyRequest(ApiKeyEnvironment.TEST)), CreateApiKeyResponse.class);
+        String apiKey = createResponse.getBody().apiKey();
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/v1/organizations/mine", HttpMethod.GET, authed(apiKey), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }

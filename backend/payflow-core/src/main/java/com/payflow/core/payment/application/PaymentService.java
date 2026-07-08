@@ -33,6 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +52,7 @@ import java.util.UUID;
  */
 @Service
 @RequiredArgsConstructor
-public class PaymentService implements PaymentRefundSupport, PaymentReconciliationSupport {
+public class PaymentService implements PaymentRefundSupport, PaymentReconciliationSupport, PaymentQueryService {
 
     private static final int DEFAULT_LIST_LIMIT = 20;
     private static final int MAX_LIST_LIMIT = 100;
@@ -237,6 +238,7 @@ public class PaymentService implements PaymentRefundSupport, PaymentReconciliati
         });
     }
 
+    @Override
     @Transactional(readOnly = true)
     public PaymentDetail getById(UUID organizationId, UUID paymentId) {
         Payment payment = loadOwnedPayment(organizationId, paymentId);
@@ -247,12 +249,35 @@ public class PaymentService implements PaymentRefundSupport, PaymentReconciliati
         return new PaymentDetail(toSummary(payment), transitions);
     }
 
+    @Override
     @Transactional(readOnly = true)
     public List<PaymentSummary> list(UUID organizationId, UUID merchantId, PaymentStatus status, Integer limit) {
         int effectiveLimit = Math.min(limit != null ? limit : DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
         return paymentRepository.search(organizationId, merchantId, status, PageRequest.of(0, effectiveLimit)).stream()
                 .map(this::toSummary)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DashboardSummary getSummary(UUID organizationId) {
+        Instant now = Instant.now();
+        List<DashboardWindowSummary> windows = List.of(
+                summarizeWindow(organizationId, "24h", now.minus(Duration.ofHours(24))),
+                summarizeWindow(organizationId, "7d", now.minus(Duration.ofDays(7))),
+                summarizeWindow(organizationId, "30d", now.minus(Duration.ofDays(30))));
+        return new DashboardSummary(windows);
+    }
+
+    private DashboardWindowSummary summarizeWindow(UUID organizationId, String window, Instant since) {
+        List<DashboardStatusCount> byStatus = paymentRepository.aggregateByStatusSince(organizationId, since).stream()
+                .map(a -> new DashboardStatusCount(a.getStatus(), a.getCount(), a.getTotalAmount()))
+                .toList();
+        long paymentCount = byStatus.stream().mapToLong(DashboardStatusCount::count).sum();
+        BigDecimal totalVolume = byStatus.stream()
+                .map(DashboardStatusCount::totalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new DashboardWindowSummary(window, paymentCount, totalVolume, byStatus);
     }
 
     private void requireMerchantInOrganization(UUID organizationId, UUID merchantId) {

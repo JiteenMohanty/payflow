@@ -4,6 +4,7 @@ import com.payflow.core.common.tenant.PrincipalType;
 import com.payflow.core.common.tenant.TenantContext;
 import com.payflow.core.common.tenant.TenantContextHolder;
 import com.payflow.core.organization.application.OrganizationAccessGuard;
+import com.payflow.core.organization.application.OrganizationMembershipSummary;
 import com.payflow.core.organization.application.OrganizationService;
 import com.payflow.core.organization.application.OrganizationSignupResult;
 import com.payflow.core.organization.application.OrganizationSummary;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -41,13 +43,26 @@ public class OrganizationController {
 
     @GetMapping("/{organizationId}")
     public OrganizationResponse get(@PathVariable UUID organizationId) {
+        accessGuard.requireDashboardMembership(organizationId, EnumSet.allOf(OrganizationRole.class));
+
+        OrganizationSummary summary = organizationService.getById(organizationId);
+        return new OrganizationResponse(summary.id(), summary.name(), summary.slug(), summary.status());
+    }
+
+    /**
+     * The dashboard's org picker after login (see OrganizationService's own
+     * note on listMemberships) - a literal path segment, so Spring routes it
+     * here rather than into get(UUID)'s {organizationId} pattern.
+     */
+    @GetMapping("/mine")
+    public List<OrganizationMembershipResponse> mine() {
         TenantContext context = TenantContextHolder.current();
         if (context.principalType() != PrincipalType.USER) {
             throw new AccessDeniedException("This endpoint requires a dashboard session");
         }
-        accessGuard.requireMembership(organizationId, context.principalId(), EnumSet.allOf(OrganizationRole.class));
 
-        OrganizationSummary summary = organizationService.getById(organizationId);
-        return new OrganizationResponse(summary.id(), summary.name(), summary.slug(), summary.status());
+        return organizationService.listMemberships(context.principalId()).stream()
+                .map(m -> new OrganizationMembershipResponse(m.organizationId(), m.organizationName(), m.organizationSlug(), m.role()))
+                .toList();
     }
 }

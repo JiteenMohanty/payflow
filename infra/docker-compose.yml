@@ -99,6 +99,10 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # M12: the admin dashboard embeds payflow-overview via <iframe> - Grafana
+      # sends X-Frame-Options: deny by default, which would otherwise block
+      # that entirely regardless of the anonymous-viewer access above.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro

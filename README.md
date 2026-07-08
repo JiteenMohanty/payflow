@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: M11 — Mock Provider hardening complete.** The Mock Provider now simulates real-world unreliability — randomized latency and a configurable failure rate on every call — and `ProviderClient` calls are protected by retry-with-backoff and a circuit breaker (Resilience4j), verified live: a 50% simulated failure rate was absorbed by retry with zero failed payments, and a sustained outage tripped the circuit breaker to fail fast rather than pile up retries. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
+> **Status: M12 — Admin Dashboard complete.** A React 18 / TypeScript admin dashboard now lets an organization log in, pick from the org(s) they belong to, and view live payment summaries, a filterable payment list with full state-timeline/ledger detail, issue refunds, browse webhook delivery history, and watch the M10 Grafana dashboard embedded live — all against real backend data, verified end-to-end including RBAC (an ANALYST-role session correctly blocked from issuing a refund) and the multi-org picker. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
 
 ## Why a platform, not a gateway
 
@@ -149,7 +149,20 @@ curl http://localhost:8080/v1/webhook-endpoints/<endpointId>/deliveries -H "Auth
 
 Running the full test suite (`mvn verify`) requires a working Docker environment reachable by Testcontainers. On Windows with Docker Desktop, `docker compose` and plain `docker` commands work fine, but some Docker Desktop builds have a known Testcontainers/docker-java incompatibility over the Windows named pipe API — if `mvn verify` fails with `Could not find a valid Docker environment` while `docker ps` works, this is a local environment issue, not a code issue (GitHub Actions CI runs native Linux Docker, unaffected).
 
-Frontend quick start will be added at M12.
+### Frontend: Admin Dashboard
+
+The dashboard is a separate Vite dev server; it proxies `/v1` to `payflow-core` on `:8080`, so no CORS setup is needed.
+
+```bash
+cd frontend/admin-dashboard
+npm install
+npm run dev
+# open http://localhost:5174 (or whatever port Vite prints)
+```
+
+Log in with the owner account you signed up above. The dashboard resolves `GET /v1/organizations/mine` after login — if the account belongs to exactly one organization it's routed straight into that org's dashboard, otherwise it shows a picker.
+
+The **Metrics** tab embeds the M10 Grafana dashboard directly (`http://localhost:3000` by default — override with `VITE_GRAFANA_URL` in `frontend/admin-dashboard/.env.development`); it needs `infra/docker-compose.yml`'s Grafana service running with `GF_SECURITY_ALLOW_EMBEDDING: "true"` (already set) — Grafana blocks `<iframe>` embedding by default regardless of anonymous-viewer access.
 
 ## Roadmap
 

@@ -14,6 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,6 +57,21 @@ public class OrganizationService implements OrganizationLookupService {
     @Transactional(readOnly = true)
     public Optional<OrganizationSummary> findById(UUID organizationId) {
         return organizationRepository.findById(organizationId).map(this::toSummary);
+    }
+
+    /**
+     * Backs the dashboard's org picker: a JWT session's TenantContext has no
+     * organizationId (see TenantContext's own class-level note - a user can
+     * belong to more than one org), so the frontend needs this right after
+     * login to know which organization(s) to route into.
+     */
+    @Transactional(readOnly = true)
+    public List<OrganizationMembershipSummary> listMemberships(UUID userId) {
+        return organizationMemberRepository.findByUserIdOrderByOrganizationNameAsc(userId).stream()
+                .map(member -> new OrganizationMembershipSummary(
+                        member.getOrganization().getId(), member.getOrganization().getName(),
+                        member.getOrganization().getSlug(), member.getRole()))
+                .toList();
     }
 
     private OrganizationSummary toSummary(Organization organization) {

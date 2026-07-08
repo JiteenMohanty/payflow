@@ -132,6 +132,7 @@ Module boundary rule: modules depend on each other **only through public interfa
 | `webhook` | Inbound provider receipt, outbound merchant delivery, DLQ | `InboundWebhookProcessor`, `WebhookEndpointService`, `WebhookDeliveryQueryService` | `payment`, `security`, `outbox`, `common` |
 | `outbox` | Outbox table, relay to Kafka, retry/poison handling | `OutboxWriter` (used inside the same DB transaction) | `common`, `infrastructure` |
 | `idempotency` | Idempotency key cache + persistence | `IdempotencyGuard` | `common`, `infrastructure` |
+| `dashboard` | JWT+RBAC-guarded read-aggregated views for the Admin Dashboard (summary, payment list/detail, ledger view, webhook history) plus refund initiation from the dashboard UI — no domain or persistence of its own, pure delegation to each owning module's existing query interface | — (leaf; consumed only by the frontend over HTTP) | `payment`, `refund`, `ledger`, `webhook`, `organization`, `common` |
 | `common` | Money, domain exceptions, event contracts, correlation ID, pagination types, `TenantContext`/`TenantContextHolder` | — (leaf module, zero inbound dependency on others) | none |
 | `infrastructure` | Cross-cutting config: DataSource, Flyway, Kafka, Redis, Bucket4j, OTel, Micrometer, scheduling | — | `common` |
 
@@ -422,14 +423,24 @@ Response includes the endpoint id and a one-time-displayed `secret` used for HMA
 
 ### 5.2 Admin Dashboard API (JWT session auth)
 
+Every path below is scoped under `/v1/organizations/{organizationId}` (M12 correction: a JWT-authenticated `TenantContext` has no bare `organizationId` — a dashboard user can belong to multiple organizations, per ADR-0010 — so it can only ever be resolved from the path, the same convention `merchant`'s own dashboard-facing endpoints already established in M1). All require `OrganizationAccessGuard` membership; each existing module's own query interface is reused (`dashboard` performs no business logic of its own — see §3). **M12 gap fix:** `POST /v1/auth/login` alone left the frontend no way to discover which `{organizationId}` to route into next — `GET /v1/organizations/mine` closes that gap, listing every organization (and role) the authenticated user belongs to, ordered by name.
+
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/v1/auth/login` | Email/password login, returns short-lived JWT + refresh token |
-| GET | `/v1/dashboard/summary` | Volume, status breakdown, last 24h/7d/30d |
-| GET | `/v1/dashboard/payments` | Recent payments (same data as merchant list API, dashboard-shaped) |
+| POST | `/v1/auth/login` | Email/password login, returns short-lived JWT + refresh token (not org-scoped — precedes knowing which org) |
+| GET | `/v1/organizations/mine` | Organizations (and role in each) the logged-in user belongs to — the dashboard's org picker |
+| GET | `/v1/organizations/{id}/dashboard/summary` | Volume, status breakdown, last 24h/7d/30d |
+| GET | `/v1/organizations/{id}/dashboard/payments` | Recent payments (same data as the merchant list API, dashboard-shaped) |
+| GET | `/v1/organizations/{id}/dashboard/payments/{paymentId}` | Payment detail, including its full state transition timeline |
+| GET | `/v1/organizations/{id}/dashboard/payments/{paymentId}/ledger` | Ledger entries for that payment |
+| POST | `/v1/organizations/{id}/dashboard/payments/{paymentId}/refunds` | Refund action (full or partial) from the dashboard |
+| GET | `/v1/organizations/{id}/dashboard/webhook-endpoints` | Registered webhook endpoints |
+| GET | `/v1/organizations/{id}/dashboard/webhook-endpoints/{endpointId}/deliveries` | Delivery history for one endpoint |
 | GET | `/v1/organizations/{id}/api-keys` | List API keys (secrets never returned after creation) |
 | POST | `/v1/organizations/{id}/api-keys` | Create a new API key (secret shown once) |
 | DELETE | `/v1/organizations/{id}/api-keys/{keyId}` | Revoke a key |
+
+**Live metrics:** the dashboard's metrics view embeds the M10 `payflow-overview` Grafana dashboard directly via `<iframe>` (`GF_AUTH_ANONYMOUS_ENABLED` already permitted the anonymous-viewer session this needs) rather than re-implementing charts in React — no new backend endpoint, no duplicated query logic. **M12 gap fix:** Grafana sends `X-Frame-Options: deny` by default, which blocks iframe embedding outright regardless of anonymous access; `infra/docker-compose.yml`'s `grafana` service now also sets `GF_SECURITY_ALLOW_EMBEDDING: "true"`.
 
 ### 5.3 Provider-facing API (Mock Provider service — separate app)
 

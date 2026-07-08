@@ -32,6 +32,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -315,6 +318,45 @@ class PaymentServiceTest {
         paymentService.expireAuthorization(paymentId);
 
         verify(outboxWriter, never()).write(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void getSummaryMapsRepositoryAggregatesIntoAllThreeWindows() {
+        PaymentRepository.PaymentStatusAggregate created = mock(PaymentRepository.PaymentStatusAggregate.class);
+        when(created.getStatus()).thenReturn(PaymentStatus.CREATED);
+        when(created.getCount()).thenReturn(2L);
+        when(created.getTotalAmount()).thenReturn(new BigDecimal("30.00"));
+
+        PaymentRepository.PaymentStatusAggregate captured = mock(PaymentRepository.PaymentStatusAggregate.class);
+        when(captured.getStatus()).thenReturn(PaymentStatus.CAPTURED);
+        when(captured.getCount()).thenReturn(1L);
+        when(captured.getTotalAmount()).thenReturn(new BigDecimal("50.00"));
+
+        when(paymentRepository.aggregateByStatusSince(eq(organizationId), any(Instant.class)))
+                .thenReturn(List.of(created, captured));
+
+        DashboardSummary summary = paymentService.getSummary(organizationId);
+
+        assertThat(summary.windows()).extracting(DashboardWindowSummary::window)
+                .containsExactly("24h", "7d", "30d");
+        summary.windows().forEach(window -> {
+            assertThat(window.paymentCount()).isEqualTo(3);
+            assertThat(window.totalVolume()).isEqualByComparingTo("80.00");
+            assertThat(window.byStatus()).hasSize(2);
+        });
+    }
+
+    @Test
+    void getSummaryReturnsZeroedWindowsWhenNoPaymentsExist() {
+        when(paymentRepository.aggregateByStatusSince(eq(organizationId), any(Instant.class))).thenReturn(List.of());
+
+        DashboardSummary summary = paymentService.getSummary(organizationId);
+
+        summary.windows().forEach(window -> {
+            assertThat(window.paymentCount()).isZero();
+            assertThat(window.totalVolume()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(window.byStatus()).isEmpty();
+        });
     }
 
     private Payment newPayment(BigDecimal amount) {

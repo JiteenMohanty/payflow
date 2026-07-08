@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -74,4 +75,25 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
             + "AND (:status IS NULL OR p.status = :status) "
             + "ORDER BY p.createdAt DESC")
     List<Payment> search(UUID organizationId, UUID merchantId, PaymentStatus status, Pageable pageable);
+
+    /**
+     * Backs DashboardSummary (M12, EDD section 5.2's "volume, status
+     * breakdown, last 24h/7d/30d") - called once per window with a
+     * different cutoff rather than one query computing all three, since
+     * Postgres has no clean way to bucket a GROUP BY into three overlapping
+     * windows in a single pass without a much less readable query for a
+     * page-load-frequency read, not a hot path.
+     */
+    @Query("SELECT p.status AS status, COUNT(p) AS count, COALESCE(SUM(p.amount), 0) AS totalAmount "
+            + "FROM Payment p WHERE p.organizationId = :organizationId AND p.createdAt >= :since "
+            + "GROUP BY p.status")
+    List<PaymentStatusAggregate> aggregateByStatusSince(UUID organizationId, Instant since);
+
+    interface PaymentStatusAggregate {
+        PaymentStatus getStatus();
+
+        long getCount();
+
+        BigDecimal getTotalAmount();
+    }
 }
