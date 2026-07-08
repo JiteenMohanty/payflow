@@ -1,0 +1,15 @@
+# M13 gap fix: application.yml's payflow.webhook.secret has a dev-only
+# fallback default (dev-mock-webhook-secret-3f8a91c2) that would otherwise
+# silently apply in prod too - this profile removes the fallback so a
+# missing MOCK_PROVIDER_WEBHOOK_SECRET fails startup instead of shipping a
+# publicly-known HMAC secret, matching payflow-core's own
+# application-prod.yml's no-fallback discipline.
+payflow:
+  webhook:
+    callback-base-url: ${PAYFLOW_CORE_BASE_URL}
+    secret: ${MOCK_PROVIDER_WEBHOOK_SECRET}
+
+management:
+  endpoint:
+    health:
+      show-details: never

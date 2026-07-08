@@ -16,6 +16,7 @@ ADRs are immutable once accepted. A changed decision gets a **new** ADR that sup
 | [0010](0010-authentication-strategy.md) | API Keys (merchants) + JWT (dashboard) | Accepted |
 | [0011](0011-webhook-reconciliation.md) | Webhooks as Reconciliation Source of Truth | Accepted |
 | [0012](0012-observability-stack.md) | Observability Stack Selection | Accepted |
+| [0013](0013-deployment-architecture.md) | Deployment Architecture | Accepted |
 
 ## Template
 

@@ -4,7 +4,7 @@
 
 PayFlow sits between merchants and payment providers (Stripe, Razorpay, Adyen, PayPal — currently backed by a Mock Provider for development and testing) and owns the parts of a payment's life that shouldn't have to be rebuilt per provider: a stable merchant-facing API, the payment lifecycle state machine, idempotent request handling, an immutable double-entry ledger, and reliable webhook delivery in both directions.
 
-> **Status: M12 — Admin Dashboard complete.** A React 18 / TypeScript admin dashboard now lets an organization log in, pick from the org(s) they belong to, and view live payment summaries, a filterable payment list with full state-timeline/ledger detail, issue refunds, browse webhook delivery history, and watch the M10 Grafana dashboard embedded live — all against real backend data, verified end-to-end including RBAC (an ANALYST-role session correctly blocked from issuing a refund) and the multi-org picker. See [`docs/EDD.md`](docs/EDD.md) for the full blueprint and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
+> **Status: M13 — Deployment complete.** PayFlow now ships as three Docker images (`payflow-core`, `mock-provider-service`, and an Nginx image serving the admin dashboard + reverse-proxying the API), a production Compose file where only Nginx is exposed to the host, and a GitHub Actions pipeline that publishes versioned images to GHCR on every merge to `main`. Verified end-to-end locally with a self-signed certificate standing in for a real one: a full signup-through-capture flow works entirely through Nginx's TLS termination, with both application services fully containerized and talking to each other over the internal network. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for how to run it on a real VPS, [ADR-0013](docs/adr/0013-deployment-architecture.md) for the reasoning, and [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) for what ships when.
 
 ## Why a platform, not a gateway
 
@@ -164,6 +164,10 @@ Log in with the owner account you signed up above. The dashboard resolves `GET /
 
 The **Metrics** tab embeds the M10 Grafana dashboard directly (`http://localhost:3000` by default — override with `VITE_GRAFANA_URL` in `frontend/admin-dashboard/.env.development`); it needs `infra/docker-compose.yml`'s Grafana service running with `GF_SECURITY_ALLOW_EMBEDDING: "true"` (already set) — Grafana blocks `<iframe>` embedding by default regardless of anonymous-viewer access.
 
+## Deployment
+
+PayFlow ships as three Docker images (`payflow-core`, `mock-provider-service`, and an Nginx image serving the built admin dashboard + reverse-proxying the API), built and published to GHCR by GitHub Actions on every merge to `main`. `infra/docker-compose.prod.yml` runs the whole stack on a single VPS with only Nginx exposed to the host. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the full walkthrough (TLS via Let's Encrypt, Grafana access, running the stack) and [ADR-0013](docs/adr/0013-deployment-architecture.md) for why it's shaped this way.
+
 ## Roadmap
 
 See [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) in the EDD for the full milestone sequence (M0 bootstrap through M14 release polish), and [§14 Future Extensibility](docs/EDD.md#14-future-extensibility) for what's designed-in but deliberately out of scope for v1 (real provider integrations, disputes, subscriptions, multi-currency settlement, platform fees).
@@ -172,4 +176,5 @@ See [§11 Implementation Roadmap](docs/EDD.md#11-implementation-roadmap) in the 
 
 - [Engineering Design Document](docs/EDD.md) — architecture, schema, API contracts, event flows, diagrams, roadmap, risk analysis
 - [Architecture Decision Records](docs/adr/README.md)
+- [Deployment Guide](docs/DEPLOYMENT.md) — running the production stack on a real VPS
 - [Changelog](CHANGELOG.md)

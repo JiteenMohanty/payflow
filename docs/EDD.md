@@ -725,8 +725,10 @@ payflow/
 │   │       resources/
 │   │         ├── application.yml, application-{dev,test,prod}.yml
 │   │         └── db/migration/V1__init.sql, V2__..., ...
+│   ├── payflow-core/Dockerfile          # multi-stage: maven build + eclipse-temurin JRE runtime
 │   └── mock-provider-service/
 │       ├── pom.xml
+│       ├── Dockerfile                   # same multi-stage pattern as payflow-core's
 │       └── src/main/java/com/payflow/mockprovider/
 ├── frontend/
 │   └── admin-dashboard/                 # React 18 + TS + Vite + Tailwind + React Query + Axios
@@ -734,14 +736,19 @@ payflow/
 │       └── src/{pages,components,hooks,api,routes,lib}
 ├── infra/
 │   ├── docker-compose.yml               # local dev: postgres, redis, kafka, prometheus, grafana, jaeger
-│   ├── docker-compose.prod.yml
+│   ├── docker-compose.prod.yml          # M13: production compose - only nginx exposes host ports
+│   ├── .env.example                     # M13: template for docker-compose.prod.yml's required secrets
 │   ├── nginx/
-│   ├── prometheus/
-│   ├── grafana/
-│   └── otel-collector/
-├── .github/workflows/ci.yml
+│   │   ├── Dockerfile                   # M13: multi-stage - builds admin-dashboard, serves it + reverse-proxies
+│   │   └── nginx.conf
+│   └── observability/                   # M10 - note: nested here, not directly under infra/ as originally sketched
+│       ├── prometheus/prometheus.yml, prometheus.prod.yml
+│       ├── grafana/{provisioning,dashboards}
+│       └── otel-collector/otel-collector-config.yaml
+├── .github/workflows/ci.yml             # build+test (backend, frontend) + M13: publish images to GHCR on main
 ├── docs/
 │   ├── EDD.md                           # this document
+│   ├── DEPLOYMENT.md                    # M13: how to run docker-compose.prod.yml on a real VPS
 │   └── adr/
 ├── CHANGELOG.md
 └── README.md

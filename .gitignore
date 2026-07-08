@@ -21,3 +21,8 @@ frontend/**/dist/
 
 # Logs
 *.log
+
+# M13: real TLS certs, htpasswd, and deploy secrets - never committed.
+# infra/.env.example is the tracked template.
+infra/nginx/ssl/
+infra/nginx/.htpasswd
