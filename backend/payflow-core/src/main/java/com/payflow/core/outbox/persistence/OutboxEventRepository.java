@@ -1,9 +1,11 @@
 package com.payflow.core.outbox.persistence;
 
 import com.payflow.core.outbox.domain.OutboxEvent;
+import com.payflow.core.outbox.domain.OutboxEventStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.Instant;
 import java.util.List;
 
 public interface OutboxEventRepository extends JpaRepository<OutboxEvent, java.util.UUID> {
@@ -18,4 +20,11 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, java.u
             + "ORDER BY created_at ASC LIMIT :limit FOR UPDATE SKIP LOCKED",
             nativeQuery = true)
     List<OutboxEvent> lockNextBatch(int limit);
+
+    /**
+     * Used by OutboxCleanupJob (M9). Scoped to PUBLISHED only - a PENDING row
+     * old enough to match the cutoff is a stuck event an operator needs to
+     * see, not something to silently delete.
+     */
+    long deleteByStatusAndCreatedAtBefore(OutboxEventStatus status, Instant cutoff);
 }

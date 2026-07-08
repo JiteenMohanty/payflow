@@ -212,6 +212,28 @@ public class PaymentService implements PaymentRefundSupport, PaymentReconciliati
         recordTransition(payment, from, targetStatus, PaymentActor.API, null);
     }
 
+    /**
+     * ExpiredAuthorizationJob's per-payment mutation (M9, "auth window
+     * elapsed" edge in EDD section 8's state diagram). No organizationId -
+     * the job sweeps system-wide, not on behalf of one tenant's request -
+     * so it locks by id alone (PaymentRepository.lockById). Idempotent: a
+     * payment that moved on (captured, canceled) before the job reached it
+     * is a safe no-op, same "confirm current state, don't blindly act"
+     * discipline as reconcileCaptureConfirmation.
+     */
+    @Transactional
+    public void expireAuthorization(UUID paymentId) {
+        paymentRepository.lockById(paymentId).ifPresent(payment -> {
+            if (payment.getStatus() != PaymentStatus.AUTHORIZED) {
+                return;
+            }
+            PaymentStatus from = payment.getStatus();
+            payment.markExpired();
+            recordTransition(payment, from, PaymentStatus.EXPIRED, PaymentActor.SCHEDULED_JOB, "authorization window elapsed");
+            emitPaymentEvent(payment, "payment.expired");
+        });
+    }
+
     @Transactional(readOnly = true)
     public PaymentDetail getById(UUID organizationId, UUID paymentId) {
         Payment payment = loadOwnedPayment(organizationId, paymentId);
@@ -279,12 +301,12 @@ public class PaymentService implements PaymentRefundSupport, PaymentReconciliati
     }
 
     /**
-     * payment.capture_failed, payment.expired, and payment.canceled (all
-     * listed in EDD section 6) are deliberately not emitted yet: a failed
-     * capture throws and rolls back the whole transaction before anything
-     * commits (see capture() above), so there is no committed row to attach
-     * an event to, and expired/canceled have no producing code path until
-     * M9's scheduled sweep exists.
+     * payment.capture_failed and payment.canceled (both listed in EDD
+     * section 6) are still deliberately not emitted: a failed capture
+     * throws and rolls back the whole transaction before anything commits
+     * (see capture() above), so there is no committed row to attach an
+     * event to, and nothing cancels a payment yet. payment.expired is now
+     * wired - see expireAuthorization().
      */
     private void emitPaymentEvent(Payment payment, String eventType) {
         PaymentEventPayload payload = new PaymentEventPayload(

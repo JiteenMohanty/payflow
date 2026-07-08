@@ -86,6 +86,45 @@ public class WebhookDelivery {
         this.nextRetryAt = nextRetryAt;
     }
 
+    /**
+     * Called by WebhookRetryJob (M9) after a retry attempt that still
+     * failed but hasn't hit max_attempts yet - increments attemptNumber
+     * here, not in markFailed(), because markFailed() is also used for the
+     * very first attempt, whose count is already correct at 1 from the
+     * constructor.
+     */
+    public void incrementAttemptAndScheduleRetry(Integer responseCode, Instant nextRetryAt) {
+        this.attemptNumber++;
+        this.status = WebhookDeliveryStatus.FAILED;
+        this.responseCode = responseCode;
+        this.nextRetryAt = nextRetryAt;
+    }
+
+    /**
+     * Terminal - WebhookRetryJob (M9) calls this once attemptNumber would
+     * reach max_attempts, per EDD section 7.5's retry/DLQ sequence. Never
+     * picked up again: the retry query only selects FAILED rows.
+     */
+    public void markExhausted(Integer responseCode) {
+        this.attemptNumber++;
+        this.status = WebhookDeliveryStatus.EXHAUSTED;
+        this.responseCode = responseCode;
+        this.nextRetryAt = null;
+    }
+
+    /**
+     * Called by WebhookRetryJob (M9) when the owning endpoint has been
+     * disabled since this delivery last failed - stops the row being picked
+     * up again (the retry query requires next_retry_at IS NOT NULL) without
+     * dead-lettering it, since a disabled endpoint isn't a delivery
+     * failure. status stays FAILED: the last real attempt genuinely did
+     * fail, and reusing EXHAUSTED here would incorrectly imply this was
+     * also dead-lettered.
+     */
+    public void pauseRetry() {
+        this.nextRetryAt = null;
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();

@@ -6,6 +6,7 @@ import com.payflow.mockprovider.domain.MockChargeStatus;
 import com.payflow.mockprovider.webhook.WebhookSender;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -70,5 +71,13 @@ public class ChargeController {
 
         webhookSender.sendAsync("charge.refunded", chargeId, request.amount(), request.currency());
         return ResponseEntity.ok(new RefundResponse("REFUNDED", null));
+    }
+
+    @GetMapping("/{chargeId}")
+    public ResponseEntity<ChargeStatusResponse> getStatus(@PathVariable String chargeId) {
+        MockCharge charge = chargeStore.find(chargeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Charge not found: " + chargeId));
+
+        return ResponseEntity.ok(new ChargeStatusResponse(charge.getStatus().name(), charge.getAmount(), charge.getCurrency()));
     }
 }

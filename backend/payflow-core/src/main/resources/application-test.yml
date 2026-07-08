@@ -17,6 +17,20 @@ payflow:
     # tests call OutboxPublisher.relayPendingEvents() directly instead, so
     # assertions never race the background poll.
     poll-interval-ms: 3600000
+  expired-authorization:
+    sweep-interval-ms: 3600000
+  reconciliation:
+    sweep-interval-ms: 3600000
+  outbox-cleanup:
+    # February never has a 31st, so this cron expression never matches -
+    # the standard idiom for "effectively disabled" rather than a plausible
+    # long interval, since @Scheduled(cron=...) has no fixedDelay-style
+    # millisecond escape hatch.
+    cron: "0 0 3 31 2 *"
+  idempotency-cleanup:
+    cron: "0 0 3 31 2 *"
+  webhook-retry:
+    poll-interval-ms: 3600000
 
 logging:
   level:

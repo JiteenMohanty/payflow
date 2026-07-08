@@ -128,6 +128,11 @@ public class Payment {
         this.status = targetStatus;
     }
 
+    public void markExpired() {
+        PaymentStateMachine.validateTransition(status, PaymentStatus.EXPIRED);
+        this.status = PaymentStatus.EXPIRED;
+    }
+
     @PrePersist
     void onCreate() {
         this.createdAt = Instant.now();

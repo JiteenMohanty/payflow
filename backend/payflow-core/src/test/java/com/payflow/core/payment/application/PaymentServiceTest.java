@@ -281,6 +281,38 @@ class PaymentServiceTest {
         verify(ledgerService, never()).postCapture(any(), any(), any(), any());
     }
 
+    @Test
+    void expireAuthorizationTransitionsAuthorizedPaymentToExpired() {
+        Payment payment = authorizedPayment(new BigDecimal("100.00"));
+        when(paymentRepository.lockById(payment.getId())).thenReturn(Optional.of(payment));
+
+        paymentService.expireAuthorization(payment.getId());
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.EXPIRED);
+        verify(outboxWriter).write(eq("PAYMENT"), any(), eq("payment.expired"), eq(OutboxTopics.PAYMENTS), any());
+    }
+
+    @Test
+    void expireAuthorizationIsANoOpWhenThePaymentIsNoLongerAuthorized() {
+        Payment payment = capturedPayment(new BigDecimal("100.00"), new BigDecimal("100.00"));
+        when(paymentRepository.lockById(payment.getId())).thenReturn(Optional.of(payment));
+
+        paymentService.expireAuthorization(payment.getId());
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CAPTURED);
+        verify(outboxWriter, never()).write(any(), any(), eq("payment.expired"), any(), any());
+    }
+
+    @Test
+    void expireAuthorizationIsANoOpWhenNoMatchingPaymentExists() {
+        UUID paymentId = UUID.randomUUID();
+        when(paymentRepository.lockById(paymentId)).thenReturn(Optional.empty());
+
+        paymentService.expireAuthorization(paymentId);
+
+        verify(outboxWriter, never()).write(any(), any(), any(), any(), any());
+    }
+
     private Payment newPayment(BigDecimal amount) {
         Payment payment = new Payment(organizationId, merchantId, amount, "USD", null, null);
         ReflectionTestUtils.setField(payment, "id", UUID.randomUUID());

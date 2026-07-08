@@ -1,8 +1,6 @@
 package com.payflow.core.outbox.application;
 
-import com.payflow.core.outbox.domain.DeadLetterEvent;
 import com.payflow.core.outbox.domain.OutboxEvent;
-import com.payflow.core.outbox.persistence.DeadLetterEventRepository;
 import com.payflow.core.outbox.persistence.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -38,7 +36,7 @@ public class OutboxPublisher {
     private static final int ERROR_REASON_MAX_LENGTH = 500;
 
     private final OutboxEventRepository outboxEventRepository;
-    private final DeadLetterEventRepository deadLetterEventRepository;
+    private final DeadLetterWriter deadLetterWriter;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final OutboxProperties properties;
 
@@ -65,8 +63,7 @@ public class OutboxPublisher {
             event.incrementRetryCount();
             log.warn("Outbox publish failed for event {} (attempt {})", event.getId(), event.getRetryCount(), e);
             if (event.getRetryCount() >= properties.maxRetries()) {
-                deadLetterEventRepository.save(new DeadLetterEvent(
-                        event.getAggregateType(), event.getAggregateId(), event.getPayload(), describe(e)));
+                deadLetterWriter.write(event.getAggregateType(), event.getAggregateId(), event.getPayload(), describe(e));
                 outboxEventRepository.delete(event);
             }
         }

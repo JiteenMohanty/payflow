@@ -8,14 +8,18 @@ import com.payflow.core.provider.ProviderAuthorizationStatus;
 import com.payflow.core.provider.ProviderCaptureRequest;
 import com.payflow.core.provider.ProviderCaptureResult;
 import com.payflow.core.provider.ProviderCaptureStatus;
+import com.payflow.core.provider.ProviderChargeStatus;
+import com.payflow.core.provider.ProviderChargeStatusResult;
 import com.payflow.core.provider.ProviderClient;
 import com.payflow.core.provider.ProviderRefundRequest;
 import com.payflow.core.provider.ProviderRefundResult;
 import com.payflow.core.provider.ProviderRefundStatus;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Talks to the separate Mock Provider service over real HTTP, exactly as a
@@ -86,6 +90,28 @@ public class MockProviderClient implements ProviderClient {
             return new ProviderRefundResult(status, response.failureReason());
         } catch (RestClientException e) {
             throw new ProviderCommunicationException("Mock provider refund call failed", e);
+        }
+    }
+
+    @Override
+    public ProviderChargeStatusResult checkStatus(String providerReference) {
+        try {
+            MockChargeStatusResponse response = restClient.get()
+                    .uri("/provider/v1/charges/{chargeId}", providerReference)
+                    .retrieve()
+                    .body(MockChargeStatusResponse.class);
+
+            ProviderChargeStatus status = "CAPTURED".equals(response.status())
+                    ? ProviderChargeStatus.CAPTURED
+                    : ProviderChargeStatus.AUTHORIZED;
+            return new ProviderChargeStatusResult(status, response.amount(), response.currency());
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                return new ProviderChargeStatusResult(ProviderChargeStatus.NOT_FOUND, null, null);
+            }
+            throw new ProviderCommunicationException("Mock provider status check failed", e);
+        } catch (RestClientException e) {
+            throw new ProviderCommunicationException("Mock provider status check failed", e);
         }
     }
 }

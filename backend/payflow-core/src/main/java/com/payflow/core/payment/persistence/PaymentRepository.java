@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,6 +17,23 @@ import java.util.UUID;
 public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
     Optional<Payment> findByIdAndOrganizationId(UUID id, UUID organizationId);
+
+    /**
+     * Used by scheduled jobs (ExpiredAuthorizationJob, ReconciliationSweeper),
+     * which operate system-wide across all tenants, not on behalf of one
+     * request's TenantContext - there is no organizationId to scope by.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Payment p WHERE p.id = :id")
+    Optional<Payment> lockById(UUID id);
+
+    /**
+     * The candidate population for both ExpiredAuthorizationJob (long
+     * window - has this authorization simply expired) and
+     * ReconciliationSweeper (short window - is this payment stuck because a
+     * webhook was lost). Same shape, different cutoff.
+     */
+    List<Payment> findByStatusAndAuthorizedAtBefore(PaymentStatus status, Instant cutoff);
 
     /**
      * SELECT ... FOR UPDATE variant of findByIdAndOrganizationId, for any

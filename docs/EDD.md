@@ -440,6 +440,7 @@ Simulates a real provider's public surface so the `ProviderClient` adapter talks
 | POST | `/provider/v1/charges` | Create + authorize a charge |
 | POST | `/provider/v1/charges/{id}/capture` | Capture |
 | POST | `/provider/v1/charges/{id}/refund` | Refund (full/partial) |
+| GET | `/provider/v1/charges/{id}` | Current charge status - polled by `ReconciliationSweeper` (M9, ADR-0011), not just relied on via webhook |
 
 Every call has randomized latency (50–2000ms), a configurable failure rate, and — regardless of the synchronous response — fires an asynchronous signed webhook back to PayFlow's inbound endpoint (`POST /v1/webhooks/providers/mock`) shortly after, which is treated as the reconciliation source of truth (see [ADR-011](adr/0011-webhook-reconciliation.md)).
 

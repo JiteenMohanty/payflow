@@ -1,9 +1,7 @@
 package com.payflow.core.outbox.application;
 
-import com.payflow.core.outbox.domain.DeadLetterEvent;
 import com.payflow.core.outbox.domain.OutboxEvent;
 import com.payflow.core.outbox.domain.OutboxEventStatus;
-import com.payflow.core.outbox.persistence.DeadLetterEventRepository;
 import com.payflow.core.outbox.persistence.OutboxEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,7 +31,7 @@ class OutboxPublisherTest {
     @Mock
     private OutboxEventRepository outboxEventRepository;
     @Mock
-    private DeadLetterEventRepository deadLetterEventRepository;
+    private DeadLetterWriter deadLetterWriter;
     @Mock
     private KafkaTemplate<String, String> kafkaTemplate;
 
@@ -42,7 +40,7 @@ class OutboxPublisherTest {
     @BeforeEach
     void setUp() {
         OutboxProperties properties = new OutboxProperties(500, 100, 3);
-        publisher = new OutboxPublisher(outboxEventRepository, deadLetterEventRepository, kafkaTemplate, properties);
+        publisher = new OutboxPublisher(outboxEventRepository, deadLetterWriter, kafkaTemplate, properties);
     }
 
     @Test
@@ -55,7 +53,7 @@ class OutboxPublisherTest {
         publisher.relayPendingEvents();
 
         assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PUBLISHED);
-        verify(deadLetterEventRepository, never()).save(any());
+        verify(deadLetterWriter, never()).write(any(), any(), any(), any());
     }
 
     @Test
@@ -69,7 +67,7 @@ class OutboxPublisherTest {
 
         assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
         assertThat(event.getRetryCount()).isEqualTo(1);
-        verify(deadLetterEventRepository, never()).save(any());
+        verify(deadLetterWriter, never()).write(any(), any(), any(), any());
         verify(outboxEventRepository, never()).delete(any());
     }
 
@@ -83,10 +81,11 @@ class OutboxPublisherTest {
 
         publisher.relayPendingEvents();
 
-        ArgumentCaptor<DeadLetterEvent> captor = ArgumentCaptor.forClass(DeadLetterEvent.class);
-        verify(deadLetterEventRepository).save(captor.capture());
-        assertThat(captor.getValue().getSourceId()).isEqualTo(event.getAggregateId());
-        assertThat(captor.getValue().getErrorReason()).contains("broker unavailable");
+        ArgumentCaptor<UUID> sourceIdCaptor = ArgumentCaptor.forClass(UUID.class);
+        ArgumentCaptor<String> errorReasonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(deadLetterWriter).write(anyString(), sourceIdCaptor.capture(), anyString(), errorReasonCaptor.capture());
+        assertThat(sourceIdCaptor.getValue()).isEqualTo(event.getAggregateId());
+        assertThat(errorReasonCaptor.getValue()).contains("broker unavailable");
         verify(outboxEventRepository).delete(event);
     }
 
@@ -109,9 +108,9 @@ class OutboxPublisherTest {
 
         publisher.relayPendingEvents();
 
-        ArgumentCaptor<DeadLetterEvent> captor = ArgumentCaptor.forClass(DeadLetterEvent.class);
-        verify(deadLetterEventRepository).save(captor.capture());
-        assertThat(captor.getValue().getErrorReason()).isEqualTo("IllegalStateException");
+        ArgumentCaptor<String> errorReasonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(deadLetterWriter).write(anyString(), any(), anyString(), errorReasonCaptor.capture());
+        assertThat(errorReasonCaptor.getValue()).isEqualTo("IllegalStateException");
     }
 
     private OutboxEvent pendingEvent() {

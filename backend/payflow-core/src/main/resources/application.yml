@@ -55,3 +55,27 @@ payflow:
     poll-interval-ms: 500
     batch-size: 100
     max-retries: 5
+  expired-authorization:
+    sweep-interval-ms: 3600000
+    # Real providers typically hold an uncaptured authorization for about a
+    # week before it lapses on their own side - this mirrors that locally
+    # rather than expiring sooner than the provider itself would.
+    auth-window-hours: 168
+  reconciliation:
+    sweep-interval-ms: 900000
+    # Short by design (ADR-0011) - this exists to catch a lost webhook
+    # quickly, well before ExpiredAuthorizationJob's much longer window
+    # would otherwise give up on the payment entirely.
+    stale-window-minutes: 15
+  outbox-cleanup:
+    cron: "0 0 3 * * *"
+    retention-days: 30
+  idempotency-cleanup:
+    cron: "0 30 3 * * *"
+  webhook-retry:
+    poll-interval-ms: 30000
+    batch-size: 100
+    # WebhookBackoff caps a single delay at 1 hour, so 6 attempts is roughly
+    # a day of retrying (30s, 1m, 2m, 4m, ... up to the 1h cap) before
+    # giving up on a merchant endpoint that's been down the whole time.
+    max-attempts: 6
