@@ -27,4 +27,12 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, java.u
      * see, not something to silently delete.
      */
     long deleteByStatusAndCreatedAtBefore(OutboxEventStatus status, Instant cutoff);
+
+    /**
+     * Backs the payflow.outbox.backlog gauge (OutboxBacklogMetrics, M10,
+     * ADR-0012) - a growing PENDING count is the outbox-pattern equivalent
+     * of a stuck queue, and one of the business metrics the ADR names
+     * explicitly.
+     */
+    long countByStatus(OutboxEventStatus status);
 }

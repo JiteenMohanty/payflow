@@ -56,6 +56,56 @@ services:
       timeout: 10s
       retries: 10
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: payflow-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    # host.docker.internal only resolves inside the container by default on
+    # Docker Desktop (Windows/Mac); this makes it resolve the same way on
+    # Linux hosts too, so prometheus.yml's scrape targets work everywhere.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    container_name: payflow-jaeger
+    ports:
+      - "16686:16686" # UI
+      - "4317"        # OTLP gRPC (collector-only, not published to the host)
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.112.0
+    container_name: payflow-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./observability/otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    depends_on:
+      - jaeger
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: payflow-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - jaeger
+
 volumes:
   postgres-data:
   redis-data:

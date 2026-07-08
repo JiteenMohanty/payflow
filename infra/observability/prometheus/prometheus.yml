@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 10s
+
+scrape_configs:
+  # payflow-core and mock-provider-service run as host-launched jars, not as
+  # docker-compose services (Testcontainers/Docker Desktop incompatibility on
+  # the primary dev machine means the whole project's manual-verification
+  # workflow has always run both jars natively against dockerized infra via
+  # localhost port mappings - see README Quick Start). Prometheus itself runs
+  # inside docker-compose, so it must reach back out to the host via
+  # host.docker.internal rather than localhost, which inside this container
+  # would resolve to the container itself.
+  - job_name: payflow-core
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+
+  - job_name: mock-provider-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8081"]

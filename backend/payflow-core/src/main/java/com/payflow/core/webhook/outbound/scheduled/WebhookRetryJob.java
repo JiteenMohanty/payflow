@@ -1,5 +1,6 @@
 package com.payflow.core.webhook.outbound.scheduled;
 
+import com.payflow.core.infrastructure.web.ScheduledJobCorrelation;
 import com.payflow.core.outbox.application.DeadLetterWriter;
 import com.payflow.core.webhook.outbound.application.DeliveryOutcome;
 import com.payflow.core.webhook.outbound.application.WebhookDeliveryAttempter;
@@ -8,6 +9,7 @@ import com.payflow.core.webhook.outbound.domain.WebhookDelivery;
 import com.payflow.core.webhook.outbound.domain.WebhookEndpoint;
 import com.payflow.core.webhook.outbound.domain.WebhookEndpointStatus;
 import com.payflow.core.webhook.outbound.persistence.WebhookDeliveryRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,14 +39,17 @@ public class WebhookRetryJob {
     private final WebhookDeliveryAttempter deliveryAttempter;
     private final DeadLetterWriter deadLetterWriter;
     private final WebhookRetryProperties properties;
+    private final MeterRegistry meterRegistry;
 
     @Scheduled(fixedDelayString = "${payflow.webhook-retry.poll-interval-ms:30000}")
     @Transactional
     public void retryFailedDeliveries() {
-        List<WebhookDelivery> batch = deliveryRepository.lockNextRetryBatch(properties.batchSize());
-        for (WebhookDelivery delivery : batch) {
-            retryOne(delivery);
-        }
+        ScheduledJobCorrelation.runWithFreshCorrelationId(() -> {
+            List<WebhookDelivery> batch = deliveryRepository.lockNextRetryBatch(properties.batchSize());
+            for (WebhookDelivery delivery : batch) {
+                retryOne(delivery);
+            }
+        });
     }
 
     // Never lets an exception escape - retryFailedDeliveries() is one
@@ -61,6 +66,7 @@ public class WebhookRetryJob {
             DeliveryOutcome outcome = deliveryAttempter.attempt(endpoint, delivery.getPayload());
             if (outcome.succeeded()) {
                 delivery.markSucceeded(outcome.responseCode());
+                meterRegistry.counter(DeliveryOutcome.DELIVERIES_METRIC, "outcome", DeliveryOutcome.OUTCOME_SUCCEEDED).increment();
                 return;
             }
 
@@ -68,8 +74,10 @@ public class WebhookRetryJob {
             if (nextAttemptNumber >= properties.maxAttempts()) {
                 delivery.markExhausted(outcome.responseCode());
                 deadLetterWriter.write(DEAD_LETTER_SOURCE_TYPE, delivery.getId(), delivery.getPayload(), describe(outcome));
+                meterRegistry.counter(DeliveryOutcome.DELIVERIES_METRIC, "outcome", DeliveryOutcome.OUTCOME_EXHAUSTED).increment();
             } else {
                 delivery.incrementAttemptAndScheduleRetry(outcome.responseCode(), WebhookBackoff.nextRetryAt(nextAttemptNumber));
+                meterRegistry.counter(DeliveryOutcome.DELIVERIES_METRIC, "outcome", DeliveryOutcome.OUTCOME_FAILED).increment();
             }
         } catch (Exception e) {
             log.warn("Webhook retry failed for delivery {}", delivery.getId(), e);

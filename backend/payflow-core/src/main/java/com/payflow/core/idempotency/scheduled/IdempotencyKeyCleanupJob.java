@@ -1,6 +1,7 @@
 package com.payflow.core.idempotency.scheduled;
 
 import com.payflow.core.idempotency.persistence.IdempotencyKeyRepository;
+import com.payflow.core.infrastructure.web.ScheduledJobCorrelation;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,9 +29,11 @@ public class IdempotencyKeyCleanupJob {
     @Scheduled(cron = "${payflow.idempotency-cleanup.cron:0 30 3 * * *}")
     @Transactional
     public void cleanup() {
-        long deleted = idempotencyKeyRepository.deleteByExpiresAtBefore(Instant.now());
-        if (deleted > 0) {
-            log.info("Idempotency key cleanup deleted {} expired key(s)", deleted);
-        }
+        ScheduledJobCorrelation.runWithFreshCorrelationId(() -> {
+            long deleted = idempotencyKeyRepository.deleteByExpiresAtBefore(Instant.now());
+            if (deleted > 0) {
+                log.info("Idempotency key cleanup deleted {} expired key(s)", deleted);
+            }
+        });
     }
 }

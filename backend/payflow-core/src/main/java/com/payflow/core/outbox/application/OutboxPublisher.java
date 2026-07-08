@@ -1,11 +1,17 @@
 package com.payflow.core.outbox.application;
 
+import com.payflow.core.infrastructure.web.CorrelationIdFilter;
+import com.payflow.core.infrastructure.web.ScheduledJobCorrelation;
 import com.payflow.core.outbox.domain.OutboxEvent;
 import com.payflow.core.outbox.persistence.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,13 +46,27 @@ public class OutboxPublisher {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final OutboxProperties properties;
 
+    /**
+     * One correlation id per poll cycle, not per original merchant request -
+     * by the time this scheduled poll runs, the request that wrote the
+     * outbox row has long since returned its response and there is no
+     * request-scoped id left to recover (ADR-0012's own broader phrasing,
+     * "a given payment, across its whole async lifecycle," is aspirational
+     * here; persisting the original request's id through the outbox's
+     * persistence boundary would need a schema change this milestone
+     * doesn't make). Still gives WebhookDispatcher (below) a real forwarded
+     * id to correlate its own delivery-attempt logs against this specific
+     * publish cycle.
+     */
     @Scheduled(fixedDelayString = "${payflow.outbox.poll-interval-ms:500}")
     @Transactional
     public void relayPendingEvents() {
-        List<OutboxEvent> batch = outboxEventRepository.lockNextBatch(properties.batchSize());
-        for (OutboxEvent event : batch) {
-            publishOne(event);
-        }
+        ScheduledJobCorrelation.runWithFreshCorrelationId(() -> {
+            List<OutboxEvent> batch = outboxEventRepository.lockNextBatch(properties.batchSize());
+            for (OutboxEvent event : batch) {
+                publishOne(event);
+            }
+        });
     }
 
     // Never lets an exception escape - relayPendingEvents() is one
@@ -56,8 +76,12 @@ public class OutboxPublisher {
     // are required to be idempotent per ADR-0002 - but pointless churn).
     private void publishOne(OutboxEvent event) {
         try {
-            kafkaTemplate.send(event.getKafkaTopic(), event.getAggregateId().toString(), event.getPayload())
-                    .get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            Message<String> message = MessageBuilder.withPayload(event.getPayload())
+                    .setHeader(KafkaHeaders.TOPIC, event.getKafkaTopic())
+                    .setHeader(KafkaHeaders.KEY, event.getAggregateId().toString())
+                    .setHeader(CorrelationIdFilter.HEADER_NAME, MDC.get(CorrelationIdFilter.MDC_KEY))
+                    .build();
+            kafkaTemplate.send(message).get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             event.markPublished();
         } catch (Exception e) {
             event.incrementRetryCount();

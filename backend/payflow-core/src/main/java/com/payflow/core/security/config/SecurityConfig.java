@@ -37,7 +37,12 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        // /actuator/prometheus is unauthenticated here too -
+                        // acceptable for this project's self-hosted,
+                        // localhost-scraped dev stack (ADR-0012), but a real
+                        // internet-facing deployment would need network
+                        // isolation or scrape-time credentials in front of it.
+                        .requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/organizations").permitAll()
                         .requestMatchers("/v1/auth/**").permitAll()
                         // Providers have neither an API key nor a JWT -

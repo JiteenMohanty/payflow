@@ -23,6 +23,7 @@ import com.payflow.core.provider.ProviderCaptureResult;
 import com.payflow.core.provider.ProviderCaptureStatus;
 import com.payflow.core.provider.ProviderClient;
 import com.payflow.core.provider.ProviderRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -63,14 +64,16 @@ class PaymentServiceTest {
     private OutboxWriter outboxWriter;
 
     private PaymentService paymentService;
+    private SimpleMeterRegistry meterRegistry;
 
     private final UUID organizationId = UUID.randomUUID();
     private final UUID merchantId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         paymentService = new PaymentService(paymentRepository, transitionRepository, merchantLookupService,
-                providerAccountResolver, providerRegistry, ledgerService, outboxWriter);
+                providerAccountResolver, providerRegistry, ledgerService, outboxWriter, meterRegistry);
     }
 
     @Test
@@ -152,6 +155,7 @@ class PaymentServiceTest {
         verify(ledgerService).postCapture(organizationId, payment.getId(), new BigDecimal("100.00"), "USD");
         verify(outboxWriter).write(eq("PAYMENT"), any(), eq("payment.captured"), eq(OutboxTopics.PAYMENTS), any());
         verify(outboxWriter).write(eq("LEDGER_TRANSACTION"), any(), eq("ledger.transaction_recorded"), eq(OutboxTopics.LEDGER), any());
+        assertThat(meterRegistry.get("payflow.payments.transitions").tag("to_status", "CAPTURED").counter().count()).isEqualTo(1.0);
     }
 
     @Test

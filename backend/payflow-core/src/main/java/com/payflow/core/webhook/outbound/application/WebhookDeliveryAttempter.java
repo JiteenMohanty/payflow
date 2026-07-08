@@ -1,6 +1,7 @@
 package com.payflow.core.webhook.outbound.application;
 
 import com.payflow.core.common.crypto.SymmetricEncryptor;
+import com.payflow.core.infrastructure.web.CorrelationIdClientInterceptor;
 import com.payflow.core.security.hmac.HmacSigner;
 import com.payflow.core.webhook.outbound.domain.WebhookEndpoint;
 import org.slf4j.Logger;
@@ -37,10 +38,12 @@ public class WebhookDeliveryAttempter {
     private final HmacSigner hmacSigner;
     private final RestClient restClient;
 
-    public WebhookDeliveryAttempter(SymmetricEncryptor encryptor, HmacSigner hmacSigner) {
+    public WebhookDeliveryAttempter(
+            RestClient.Builder restClientBuilder, CorrelationIdClientInterceptor correlationIdInterceptor,
+            SymmetricEncryptor encryptor, HmacSigner hmacSigner) {
         this.encryptor = encryptor;
         this.hmacSigner = hmacSigner;
-        this.restClient = buildRestClient();
+        this.restClient = buildRestClient(restClientBuilder, correlationIdInterceptor);
     }
 
     public DeliveryOutcome attempt(WebhookEndpoint endpoint, String payload) {
@@ -79,13 +82,13 @@ public class WebhookDeliveryAttempter {
     // it's never followed at all. Bounded connect/read timeouts so one slow
     // or hanging merchant endpoint can't tie up the calling thread
     // indefinitely.
-    private RestClient buildRestClient() {
+    private RestClient buildRestClient(RestClient.Builder builder, CorrelationIdClientInterceptor correlationIdInterceptor) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .connectTimeout(CONNECT_TIMEOUT)
                 .build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(READ_TIMEOUT);
-        return RestClient.builder().requestFactory(requestFactory).build();
+        return builder.requestFactory(requestFactory).requestInterceptor(correlationIdInterceptor).build();
     }
 }

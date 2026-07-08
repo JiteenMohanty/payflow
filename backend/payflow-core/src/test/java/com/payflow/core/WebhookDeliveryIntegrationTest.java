@@ -1,6 +1,7 @@
 package com.payflow.core;
 
 import com.payflow.core.common.crypto.SymmetricEncryptor;
+import com.payflow.core.infrastructure.web.CorrelationIdFilter;
 import com.payflow.core.outbox.application.OutboxPublisher;
 import com.payflow.core.payment.api.CreatePaymentRequest;
 import com.payflow.core.payment.api.PaymentResponse;
@@ -87,6 +88,13 @@ class WebhookDeliveryIntegrationTest extends AbstractIntegrationTest {
         String expectedDigest = new HmacSha256Signer().sign(secret, timestamp + "." + request.body());
         assertThat(providedDigest).isEqualTo(expectedDigest);
 
+        // Proves the correlation id round-trip end to end (ADR-0012):
+        // OutboxPublisher stamped one fresh id as a Kafka header,
+        // WebhookDispatcher's real @KafkaListener restored it into MDC, and
+        // CorrelationIdClientInterceptor carried it onto this actual
+        // outbound HTTP call - not just unit-tested in isolation at each hop.
+        assertThat(request.correlationId()).isNotBlank();
+
         for (int i = 0; i < 20; i++) {
             List<WebhookDelivery> deliveries = webhookDeliveryRepository.findByWebhookEndpointIdOrderByCreatedAtDesc(endpoint.getId());
             if (!deliveries.isEmpty() && deliveries.get(0).getStatus() == WebhookDeliveryStatus.SUCCEEDED) {
@@ -102,11 +110,12 @@ class WebhookDeliveryIntegrationTest extends AbstractIntegrationTest {
         receiver = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         receiver.createContext("/hooks", exchange -> {
             String signature = exchange.getRequestHeaders().getFirst("X-PayFlow-Signature");
+            String correlationId = exchange.getRequestHeaders().getFirst(CorrelationIdFilter.HEADER_NAME);
             String body;
             try (InputStream in = exchange.getRequestBody()) {
                 body = new String(in.readAllBytes(), StandardCharsets.UTF_8);
             }
-            received.offer(new ReceivedRequest(signature, body));
+            received.offer(new ReceivedRequest(signature, correlationId, body));
             exchange.sendResponseHeaders(200, -1);
             exchange.close();
         });
@@ -124,6 +133,6 @@ class WebhookDeliveryIntegrationTest extends AbstractIntegrationTest {
         return response.getBody().id();
     }
 
-    private record ReceivedRequest(String signatureHeader, String body) {
+    private record ReceivedRequest(String signatureHeader, String correlationId, String body) {
     }
 }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.payflow.core.idempotency.domain.IdempotencyKey;
 import com.payflow.core.idempotency.domain.IdempotencyKeyStatus;
 import com.payflow.core.idempotency.persistence.IdempotencyKeyRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,10 +43,12 @@ class IdempotencyServiceTest {
     private final UUID organizationId = UUID.randomUUID();
 
     private IdempotencyService idempotencyService;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
-        idempotencyService = new IdempotencyService(repository, redisTemplate, objectMapper, properties);
+        meterRegistry = new SimpleMeterRegistry();
+        idempotencyService = new IdempotencyService(repository, redisTemplate, objectMapper, properties, meterRegistry);
     }
 
     @Test
@@ -58,6 +61,7 @@ class IdempotencyServiceTest {
         IdempotencyCheckResult result = idempotencyService.check(organizationId, "key-1", "fingerprint-a");
 
         assertThat(result).isInstanceOf(IdempotencyCheckResult.Proceed.class);
+        assertThat(meterRegistry.get("payflow.idempotency.requests").tag("result", "proceed").counter().count()).isEqualTo(1.0);
     }
 
     @Test

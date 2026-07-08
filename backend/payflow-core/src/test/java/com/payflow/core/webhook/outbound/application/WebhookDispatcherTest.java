@@ -8,6 +8,7 @@ import com.payflow.core.webhook.outbound.domain.WebhookEndpoint;
 import com.payflow.core.webhook.outbound.domain.WebhookEndpointStatus;
 import com.payflow.core.webhook.outbound.persistence.WebhookDeliveryRepository;
 import com.payflow.core.webhook.outbound.persistence.WebhookEndpointRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,12 +40,14 @@ class WebhookDispatcherTest {
     private WebhookDeliveryAttempter deliveryAttempter;
 
     private WebhookDispatcher dispatcher;
+    private SimpleMeterRegistry meterRegistry;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final UUID organizationId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        dispatcher = new WebhookDispatcher(endpointRepository, deliveryRepository, deliveryAttempter, objectMapper);
+        meterRegistry = new SimpleMeterRegistry();
+        dispatcher = new WebhookDispatcher(endpointRepository, deliveryRepository, deliveryAttempter, objectMapper, meterRegistry);
     }
 
     @Test
@@ -55,12 +58,13 @@ class WebhookDispatcherTest {
         when(deliveryAttempter.attempt(any(), any())).thenReturn(new DeliveryOutcome(false, null));
         when(deliveryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        dispatcher.onMessage(paymentPayload("payment.captured"));
+        dispatcher.onMessage(paymentPayload("payment.captured"), "test-correlation-id");
 
         WebhookDelivery finalState = lastSaved();
         assertThat(finalState.getStatus()).isEqualTo(WebhookDeliveryStatus.FAILED);
         assertThat(finalState.getNextRetryAt()).isNotNull();
         assertThat(finalState.getAttemptNumber()).isEqualTo(1);
+        assertThat(meterRegistry.get(DeliveryOutcome.DELIVERIES_METRIC).tag("outcome", "failed").counter().count()).isEqualTo(1.0);
     }
 
     @Test
@@ -71,7 +75,7 @@ class WebhookDispatcherTest {
         when(deliveryAttempter.attempt(any(), any())).thenReturn(new DeliveryOutcome(true, 200));
         when(deliveryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        dispatcher.onMessage(paymentPayload("payment.captured"));
+        dispatcher.onMessage(paymentPayload("payment.captured"), "test-correlation-id");
 
         WebhookDelivery finalState = lastSaved();
         assertThat(finalState.getStatus()).isEqualTo(WebhookDeliveryStatus.SUCCEEDED);
@@ -84,7 +88,7 @@ class WebhookDispatcherTest {
         when(endpointRepository.findByOrganizationIdAndStatus(organizationId, WebhookEndpointStatus.ACTIVE))
                 .thenReturn(List.of(endpoint));
 
-        dispatcher.onMessage(paymentPayload("payment.captured"));
+        dispatcher.onMessage(paymentPayload("payment.captured"), "test-correlation-id");
 
         verify(deliveryRepository, never()).save(any());
     }
@@ -94,14 +98,14 @@ class WebhookDispatcherTest {
         when(endpointRepository.findByOrganizationIdAndStatus(organizationId, WebhookEndpointStatus.ACTIVE))
                 .thenReturn(List.of());
 
-        dispatcher.onMessage(paymentPayload("payment.captured"));
+        dispatcher.onMessage(paymentPayload("payment.captured"), "test-correlation-id");
 
         verify(deliveryRepository, never()).save(any());
     }
 
     @Test
     void skipsWhenTheEventEnvelopeCannotBeParsed() {
-        dispatcher.onMessage("not valid json");
+        dispatcher.onMessage("not valid json", "test-correlation-id");
 
         verify(endpointRepository, never()).findByOrganizationIdAndStatus(any(), any());
     }

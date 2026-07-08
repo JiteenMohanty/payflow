@@ -1,5 +1,6 @@
 package com.payflow.core.payment.scheduled;
 
+import com.payflow.core.infrastructure.web.ScheduledJobCorrelation;
 import com.payflow.core.payment.application.PaymentService;
 import com.payflow.core.payment.domain.Payment;
 import com.payflow.core.payment.domain.PaymentStatus;
@@ -35,14 +36,16 @@ public class ExpiredAuthorizationJob {
 
     @Scheduled(fixedDelayString = "${payflow.expired-authorization.sweep-interval-ms:3600000}")
     public void sweep() {
-        Instant cutoff = Instant.now().minus(Duration.ofHours(properties.authWindowHours()));
-        List<Payment> stale = paymentRepository.findByStatusAndAuthorizedAtBefore(PaymentStatus.AUTHORIZED, cutoff);
-        for (Payment payment : stale) {
-            try {
-                paymentService.expireAuthorization(payment.getId());
-            } catch (Exception e) {
-                log.warn("Failed to expire authorization for payment {}", payment.getId(), e);
+        ScheduledJobCorrelation.runWithFreshCorrelationId(() -> {
+            Instant cutoff = Instant.now().minus(Duration.ofHours(properties.authWindowHours()));
+            List<Payment> stale = paymentRepository.findByStatusAndAuthorizedAtBefore(PaymentStatus.AUTHORIZED, cutoff);
+            for (Payment payment : stale) {
+                try {
+                    paymentService.expireAuthorization(payment.getId());
+                } catch (Exception e) {
+                    log.warn("Failed to expire authorization for payment {}", payment.getId(), e);
+                }
             }
-        }
+        });
     }
 }

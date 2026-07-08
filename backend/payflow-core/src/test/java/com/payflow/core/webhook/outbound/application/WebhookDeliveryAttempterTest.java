@@ -1,6 +1,7 @@
 package com.payflow.core.webhook.outbound.application;
 
 import com.payflow.core.common.crypto.SymmetricEncryptor;
+import com.payflow.core.infrastructure.web.CorrelationIdClientInterceptor;
 import com.payflow.core.security.hmac.HmacSigner;
 import com.payflow.core.webhook.outbound.domain.WebhookEndpoint;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -33,7 +35,7 @@ class WebhookDeliveryAttempterTest {
 
     @BeforeEach
     void setUp() {
-        attempter = new WebhookDeliveryAttempter(encryptor, hmacSigner);
+        attempter = new WebhookDeliveryAttempter(RestClient.builder(), new CorrelationIdClientInterceptor(), encryptor, hmacSigner);
     }
 
     @Test

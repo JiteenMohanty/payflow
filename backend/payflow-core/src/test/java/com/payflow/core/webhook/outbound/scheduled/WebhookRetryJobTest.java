@@ -7,6 +7,7 @@ import com.payflow.core.webhook.outbound.domain.WebhookDelivery;
 import com.payflow.core.webhook.outbound.domain.WebhookDeliveryStatus;
 import com.payflow.core.webhook.outbound.domain.WebhookEndpoint;
 import com.payflow.core.webhook.outbound.persistence.WebhookDeliveryRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,11 +38,13 @@ class WebhookRetryJobTest {
     private DeadLetterWriter deadLetterWriter;
 
     private WebhookRetryJob job;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         job = new WebhookRetryJob(deliveryRepository, deliveryAttempter, deadLetterWriter,
-                new WebhookRetryProperties(30_000, 100, 6));
+                new WebhookRetryProperties(30_000, 100, 6), meterRegistry);
     }
 
     @Test
@@ -83,6 +86,7 @@ class WebhookRetryJobTest {
         assertThat(delivery.getAttemptNumber()).isEqualTo(6);
         assertThat(delivery.getNextRetryAt()).isNull();
         verify(deadLetterWriter).write(eq("webhook_delivery"), eq(delivery.getId()), eq(delivery.getPayload()), anyString());
+        assertThat(meterRegistry.get(DeliveryOutcome.DELIVERIES_METRIC).tag("outcome", "exhausted").counter().count()).isEqualTo(1.0);
     }
 
     @Test

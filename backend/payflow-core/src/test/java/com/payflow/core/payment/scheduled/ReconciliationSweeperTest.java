@@ -9,6 +9,7 @@ import com.payflow.core.provider.ProviderChargeStatus;
 import com.payflow.core.provider.ProviderChargeStatusResult;
 import com.payflow.core.provider.ProviderClient;
 import com.payflow.core.provider.ProviderRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +21,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -39,11 +41,13 @@ class ReconciliationSweeperTest {
     private ProviderClient providerClient;
 
     private ReconciliationSweeper sweeper;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         sweeper = new ReconciliationSweeper(paymentRepository, paymentReconciliationSupport, providerRegistry,
-                new ReconciliationSweepProperties(900_000, 15));
+                new ReconciliationSweepProperties(900_000, 15), meterRegistry);
     }
 
     @Test
@@ -59,6 +63,7 @@ class ReconciliationSweeperTest {
 
         verify(paymentReconciliationSupport).reconcileCaptureConfirmation(
                 ProviderCode.MOCK, payment.getProviderReference(), new BigDecimal("50.00"), "USD");
+        assertThat(meterRegistry.get("payflow.reconciliation.findings").tag("status", "CAPTURED").counter().count()).isEqualTo(1.0);
     }
 
     @Test

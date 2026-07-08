@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!--
+        JSON in dev/prod - the environments whose console output is actually
+        meant to be observed (docker logs, a real deployment) per ADR-0012's
+        "observable by default, not instrumented reactively". Plain text in
+        test only, so `mvn test` output stays readable for a human debugging
+        a local failure - LogstashEncoder includes every MDC key (correlationId,
+        and traceId/spanId once tracing is wired) automatically, with no
+        per-key configuration needed here.
+    -->
+    <springProfile name="dev,prod">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <customFields>{"service":"payflow-core"}</customFields>
+            </encoder>
+        </appender>
+    </springProfile>
+
+    <springProfile name="test">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+    </springProfile>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

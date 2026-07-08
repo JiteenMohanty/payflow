@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.payflow.core.idempotency.domain.IdempotencyKey;
 import com.payflow.core.idempotency.domain.IdempotencyKeyStatus;
 import com.payflow.core.idempotency.persistence.IdempotencyKeyRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,11 +31,13 @@ public class IdempotencyService implements IdempotencyGuard {
 
     private static final Logger log = LoggerFactory.getLogger(IdempotencyService.class);
     private static final String CACHE_KEY_PREFIX = "idem:";
+    private static final String REQUESTS_METRIC = "payflow.idempotency.requests";
 
     private final IdempotencyKeyRepository repository;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final IdempotencyProperties properties;
+    private final MeterRegistry meterRegistry;
 
     @Override
     @Transactional
@@ -43,30 +46,46 @@ public class IdempotencyService implements IdempotencyGuard {
         if (cached.isPresent()) {
             CachedIdempotentResponse response = cached.get();
             return response.fingerprint().equals(requestFingerprint)
-                    ? new IdempotencyCheckResult.Replay(response.statusCode(), response.responseBody())
-                    : new IdempotencyCheckResult.FingerprintMismatch();
+                    ? recordAndReturn(new IdempotencyCheckResult.Replay(response.statusCode(), response.responseBody()))
+                    : recordAndReturn(new IdempotencyCheckResult.FingerprintMismatch());
         }
 
         Optional<IdempotencyKey> existing = repository.findByOrganizationIdAndKey(organizationId, key);
         if (existing.isPresent()) {
             IdempotencyKey record = existing.get();
             if (!record.getRequestFingerprint().equals(requestFingerprint)) {
-                return new IdempotencyCheckResult.FingerprintMismatch();
+                return recordAndReturn(new IdempotencyCheckResult.FingerprintMismatch());
             }
             if (record.getStatus() == IdempotencyKeyStatus.IN_PROGRESS) {
-                return new IdempotencyCheckResult.InProgress();
+                return recordAndReturn(new IdempotencyCheckResult.InProgress());
             }
             writeToCache(organizationId, key, requestFingerprint, record.getResponseStatusCode(), record.getResponseBody());
-            return new IdempotencyCheckResult.Replay(record.getResponseStatusCode(), record.getResponseBody());
+            return recordAndReturn(new IdempotencyCheckResult.Replay(record.getResponseStatusCode(), record.getResponseBody()));
         }
 
         try {
             Instant expiresAt = Instant.now().plus(Duration.ofHours(properties.keyTtlHours()));
             repository.saveAndFlush(new IdempotencyKey(organizationId, key, requestFingerprint, expiresAt));
-            return new IdempotencyCheckResult.Proceed();
+            return recordAndReturn(new IdempotencyCheckResult.Proceed());
         } catch (DataIntegrityViolationException lostRace) {
-            return new IdempotencyCheckResult.InProgress();
+            return recordAndReturn(new IdempotencyCheckResult.InProgress());
         }
+    }
+
+    /**
+     * Single choke point for the idempotency replay-rate business metric
+     * (ADR-0012) - every one of check()'s five return points passes through
+     * here rather than each incrementing its own counter inline.
+     */
+    private IdempotencyCheckResult recordAndReturn(IdempotencyCheckResult result) {
+        String resultTag = switch (result) {
+            case IdempotencyCheckResult.Proceed ignored -> "proceed";
+            case IdempotencyCheckResult.Replay ignored -> "replay";
+            case IdempotencyCheckResult.InProgress ignored -> "in_progress";
+            case IdempotencyCheckResult.FingerprintMismatch ignored -> "fingerprint_mismatch";
+        };
+        meterRegistry.counter(REQUESTS_METRIC, "result", resultTag).increment();
+        return result;
     }
 
     @Override

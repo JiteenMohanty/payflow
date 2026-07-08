@@ -1,5 +1,6 @@
 package com.payflow.core.payment.scheduled;
 
+import com.payflow.core.infrastructure.web.ScheduledJobCorrelation;
 import com.payflow.core.payment.application.PaymentReconciliationSupport;
 import com.payflow.core.payment.domain.Payment;
 import com.payflow.core.payment.domain.PaymentStatus;
@@ -8,6 +9,7 @@ import com.payflow.core.provider.ProviderChargeStatus;
 import com.payflow.core.provider.ProviderChargeStatusResult;
 import com.payflow.core.provider.ProviderClient;
 import com.payflow.core.provider.ProviderRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,25 +36,30 @@ import java.util.List;
 public class ReconciliationSweeper {
 
     private static final Logger log = LoggerFactory.getLogger(ReconciliationSweeper.class);
+    private static final String FINDINGS_METRIC = "payflow.reconciliation.findings";
 
     private final PaymentRepository paymentRepository;
     private final PaymentReconciliationSupport paymentReconciliationSupport;
     private final ProviderRegistry providerRegistry;
     private final ReconciliationSweepProperties properties;
+    private final MeterRegistry meterRegistry;
 
     @Scheduled(fixedDelayString = "${payflow.reconciliation.sweep-interval-ms:900000}")
     public void sweep() {
-        Instant cutoff = Instant.now().minus(Duration.ofMinutes(properties.staleWindowMinutes()));
-        List<Payment> stuck = paymentRepository.findByStatusAndAuthorizedAtBefore(PaymentStatus.AUTHORIZED, cutoff);
-        for (Payment payment : stuck) {
-            reconcileOne(payment);
-        }
+        ScheduledJobCorrelation.runWithFreshCorrelationId(() -> {
+            Instant cutoff = Instant.now().minus(Duration.ofMinutes(properties.staleWindowMinutes()));
+            List<Payment> stuck = paymentRepository.findByStatusAndAuthorizedAtBefore(PaymentStatus.AUTHORIZED, cutoff);
+            for (Payment payment : stuck) {
+                reconcileOne(payment);
+            }
+        });
     }
 
     private void reconcileOne(Payment payment) {
         try {
             ProviderClient client = providerRegistry.resolve(payment.getProviderCode());
             ProviderChargeStatusResult result = client.checkStatus(payment.getProviderReference());
+            meterRegistry.counter(FINDINGS_METRIC, "status", result.status().name()).increment();
 
             if (result.status() == ProviderChargeStatus.CAPTURED) {
                 paymentReconciliationSupport.reconcileCaptureConfirmation(
@@ -69,6 +76,7 @@ public class ReconciliationSweeper {
                         payment.getProviderReference(), payment.getId());
             }
         } catch (Exception e) {
+            meterRegistry.counter(FINDINGS_METRIC, "status", "ERROR").increment();
             log.warn("Reconciliation sweep failed to reach provider for payment {}", payment.getId(), e);
         }
     }

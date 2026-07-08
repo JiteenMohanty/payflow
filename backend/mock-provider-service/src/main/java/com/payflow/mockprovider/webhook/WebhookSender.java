@@ -1,8 +1,11 @@
 package com.payflow.mockprovider.webhook;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.payflow.mockprovider.observability.CorrelationIdFilter;
+import io.micrometer.context.ContextSnapshotFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -30,28 +33,43 @@ import java.util.concurrent.CompletableFuture;
  * HmacSha256Signer - the two services are independent deployables with no
  * shared library between them by design, and this is ~10 lines of standard
  * JDK crypto, not worth a shared module for.
+ *
+ * Built from the injected RestClient.Builder (not the static
+ * RestClient.builder() factory) so Spring Boot's Micrometer HTTP client
+ * instrumentation applies - the trace this send continues, though, has to
+ * be captured explicitly: the common ForkJoinPool thread sendAsync() hands
+ * off to inherits neither MDC nor the active trace context on its own
+ * (ADR-0012's own "critical for following a single payment's request across
+ * PayFlow core -> Mock Provider -> back via webhook" is exactly this hop).
  */
 @Component
 public class WebhookSender {
 
     private static final Logger log = LoggerFactory.getLogger(WebhookSender.class);
     private static final String ALGORITHM = "HmacSHA256";
+    private static final ContextSnapshotFactory CONTEXT_SNAPSHOT_FACTORY = ContextSnapshotFactory.builder().build();
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final String secret;
 
     public WebhookSender(
+            RestClient.Builder restClientBuilder,
             @Value("${payflow.webhook.callback-base-url}") String callbackBaseUrl,
             @Value("${payflow.webhook.secret}") String secret,
             ObjectMapper objectMapper) {
-        this.restClient = RestClient.builder().baseUrl(callbackBaseUrl).build();
+        this.restClient = restClientBuilder.baseUrl(callbackBaseUrl).build();
         this.secret = secret;
         this.objectMapper = objectMapper;
     }
 
     public void sendAsync(String eventType, String chargeId, BigDecimal amount, String currency) {
-        CompletableFuture.runAsync(() -> send(eventType, chargeId, amount, currency))
+        // Captured here, on the calling (request) thread, before the async
+        // hop - captureAll() picks up both MDC (correlationId) and the
+        // active trace context, and wrap() restores both on whichever
+        // thread actually runs send().
+        Runnable task = CONTEXT_SNAPSHOT_FACTORY.captureAll().wrap(() -> send(eventType, chargeId, amount, currency));
+        CompletableFuture.runAsync(task)
                 .exceptionally(e -> {
                     log.warn("Failed to deliver webhook for {} {}", eventType, chargeId, e);
                     return null;
@@ -71,14 +89,16 @@ public class WebhookSender {
 
         long timestampSeconds = Instant.now().getEpochSecond();
         String signature = sign(timestampSeconds + "." + body);
+        String correlationId = MDC.get(CorrelationIdFilter.MDC_KEY);
 
-        restClient.post()
+        RestClient.RequestBodySpec request = restClient.post()
                 .uri("/v1/webhooks/providers/mock")
                 .header("X-Mock-Signature", "t=" + timestampSeconds + ",v1=" + signature)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
-                .toBodilessEntity();
+                .contentType(MediaType.APPLICATION_JSON);
+        if (correlationId != null) {
+            request.header(CorrelationIdFilter.HEADER_NAME, correlationId);
+        }
+        request.body(body).retrieve().toBodilessEntity();
     }
 
     private String sign(String payload) {

@@ -11,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
+import org.springframework.messaging.Message;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -47,7 +48,7 @@ class OutboxPublisherTest {
     void successfullyPublishedEventsAreMarkedPublished() {
         OutboxEvent event = pendingEvent();
         when(outboxEventRepository.lockNextBatch(100)).thenReturn(List.of(event));
-        when(kafkaTemplate.send(anyString(), anyString(), anyString()))
+        when(kafkaTemplate.send(any(Message.class)))
                 .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
 
         publisher.relayPendingEvents();
@@ -60,7 +61,7 @@ class OutboxPublisherTest {
     void aFailedSendIncrementsRetryCountWithoutMovingToDeadLetterBelowTheThreshold() {
         OutboxEvent event = pendingEvent();
         when(outboxEventRepository.lockNextBatch(100)).thenReturn(List.of(event));
-        when(kafkaTemplate.send(anyString(), anyString(), anyString()))
+        when(kafkaTemplate.send(any(Message.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("broker unavailable")));
 
         publisher.relayPendingEvents();
@@ -76,7 +77,7 @@ class OutboxPublisherTest {
         OutboxEvent event = pendingEvent();
         ReflectionTestUtils.setField(event, "retryCount", 2);
         when(outboxEventRepository.lockNextBatch(100)).thenReturn(List.of(event));
-        when(kafkaTemplate.send(anyString(), anyString(), anyString()))
+        when(kafkaTemplate.send(any(Message.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("broker unavailable")));
 
         publisher.relayPendingEvents();
@@ -103,7 +104,7 @@ class OutboxPublisherTest {
         OutboxEvent event = pendingEvent();
         ReflectionTestUtils.setField(event, "retryCount", 4);
         when(outboxEventRepository.lockNextBatch(100)).thenReturn(List.of(event));
-        when(kafkaTemplate.send(anyString(), anyString(), anyString()))
+        when(kafkaTemplate.send(any(Message.class)))
                 .thenThrow(new IllegalStateException());
 
         publisher.relayPendingEvents();

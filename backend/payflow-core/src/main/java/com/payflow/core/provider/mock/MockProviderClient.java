@@ -2,6 +2,7 @@ package com.payflow.core.provider.mock;
 
 import com.payflow.core.common.exception.ProviderCommunicationException;
 import com.payflow.core.common.provider.ProviderCode;
+import com.payflow.core.infrastructure.web.CorrelationIdClientInterceptor;
 import com.payflow.core.provider.ProviderAuthorizationRequest;
 import com.payflow.core.provider.ProviderAuthorizationResult;
 import com.payflow.core.provider.ProviderAuthorizationStatus;
@@ -23,15 +24,22 @@ import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Talks to the separate Mock Provider service over real HTTP, exactly as a
- * real provider integration would - see ADR-0006.
+ * real provider integration would - see ADR-0006. Built from the injected,
+ * Spring Boot-autoconfigured RestClient.Builder (prototype-scoped, so each
+ * injection point gets its own instance) rather than the static
+ * RestClient.builder() factory - only the injected builder carries the
+ * Micrometer HTTP client instrumentation (metrics + trace propagation,
+ * ADR-0012) that Spring Boot wires onto it automatically.
  */
 @Component
 public class MockProviderClient implements ProviderClient {
 
     private final RestClient restClient;
 
-    public MockProviderClient(@Value("${payflow.provider.mock.base-url}") String baseUrl) {
-        this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+    public MockProviderClient(
+            RestClient.Builder restClientBuilder, CorrelationIdClientInterceptor correlationIdInterceptor,
+            @Value("${payflow.provider.mock.base-url}") String baseUrl) {
+        this.restClient = restClientBuilder.baseUrl(baseUrl).requestInterceptor(correlationIdInterceptor).build();
     }
 
     @Override

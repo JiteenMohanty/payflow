@@ -26,6 +26,7 @@ import com.payflow.core.provider.ProviderCaptureResult;
 import com.payflow.core.provider.ProviderCaptureStatus;
 import com.payflow.core.provider.ProviderClient;
 import com.payflow.core.provider.ProviderRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -54,6 +55,7 @@ public class PaymentService implements PaymentRefundSupport, PaymentReconciliati
 
     private static final int DEFAULT_LIST_LIMIT = 20;
     private static final int MAX_LIST_LIMIT = 100;
+    private static final String TRANSITIONS_METRIC = "payflow.payments.transitions";
 
     private final PaymentRepository paymentRepository;
     private final PaymentStateTransitionRepository transitionRepository;
@@ -62,6 +64,7 @@ public class PaymentService implements PaymentRefundSupport, PaymentReconciliati
     private final ProviderRegistry providerRegistry;
     private final LedgerService ledgerService;
     private final OutboxWriter outboxWriter;
+    private final MeterRegistry meterRegistry;
 
     @Transactional
     public PaymentSummary createPayment(
@@ -274,8 +277,15 @@ public class PaymentService implements PaymentRefundSupport, PaymentReconciliati
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
     }
 
+    /**
+     * The one choke point every payment status change already passes
+     * through, so it doubles as the business-metric emission point for
+     * "payments by status" (ADR-0012) without a separate counter call at
+     * every one of the eight call sites above.
+     */
     private void recordTransition(Payment payment, PaymentStatus from, PaymentStatus to, PaymentActor actor, String reason) {
         transitionRepository.save(new PaymentStateTransition(payment, from, to, actor, reason));
+        meterRegistry.counter(TRANSITIONS_METRIC, "to_status", to.name()).increment();
     }
 
     private PaymentSummary toSummary(Payment payment) {

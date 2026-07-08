@@ -8,6 +8,13 @@ spring:
     hibernate:
       ddl-auto: validate
   kafka:
+    template:
+      # Wraps each send() in a Micrometer Observation - metrics plus, when a
+      # trace is active on the calling thread, a traceparent header on the
+      # record so a consumer-side span (below) links back to it (ADR-0012).
+      observation-enabled: true
+    listener:
+      observation-enabled: true
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -38,10 +45,35 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       show-details: when-authorized
+      # Kubernetes-style liveness/readiness groups (health.livenessState /
+      # health.readinessState auto-contribute) - separate from the plain
+      # "health" endpoint above, which stays the human/dashboard-facing view.
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  tracing:
+    sampling:
+      # 1.0 in dev/prod is a deliberate choice for a system at this scale
+      # (ADR-0012: "correctness bugs manifest as silent backlogs or drift",
+      # which sampling would risk missing) - overridden to 0 in test so
+      # Testcontainers runs never attempt to reach a collector that isn't
+      # part of the test environment.
+      probability: 1.0
+  otlp:
+    tracing:
+      # The otel-collector container's published OTLP/HTTP port -
+      # payflow-core runs as a host-launched jar, not inside docker-compose
+      # (see README Quick Start), so this is a real localhost port mapping,
+      # not a container-to-container address.
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
 
 payflow:
   security:

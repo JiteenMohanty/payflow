@@ -32,6 +32,11 @@ payflow:
   webhook-retry:
     poll-interval-ms: 3600000
 
+management:
+  tracing:
+    sampling:
+      probability: 0
+
 logging:
   level:
     com.payflow: DEBUG
